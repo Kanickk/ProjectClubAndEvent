@@ -1,0 +1,765 @@
+'use client';
+
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase-browser';
+import Footer from '@/components/Footer';
+import jsPDF from 'jspdf';
+import QRCode from 'qrcode';
+
+export default function StudentDashboard() {
+    const router = useRouter();
+    const supabase = createClient();
+    const [profile, setProfile] = useState(null);
+    const [activeTab, setActiveTab] = useState('overview');
+    const [loading, setLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState({});
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Data
+    const [myClubs, setMyClubs] = useState([]);
+    const [allClubs, setAllClubs] = useState([]);
+    const [myEvents, setMyEvents] = useState([]);
+    const [allEvents, setAllEvents] = useState([]);
+    const [myCertificates, setMyCertificates] = useState([]);
+    const [notifications, setNotifications] = useState([]);
+    const [broadcastNotifs, setBroadcastNotifs] = useState([]);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [selectedChatClub, setSelectedChatClub] = useState(null);
+    const chatEndRef = useRef(null);
+
+    const fetchData = useCallback(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { router.push('/login'); return; }
+
+        const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (!prof || prof.role !== 'student' || prof.status !== 'active') {
+            router.push('/login'); return;
+        }
+        setProfile(prof);
+
+        // Parallel fetch
+        const [
+            { data: clubs },
+            { data: memberships },
+            { data: events },
+            { data: registrations },
+            { data: certs },
+            { data: notifs }
+        ] = await Promise.all([
+            supabase.from('clubs').select('*, profiles(full_name)'), // All clubs
+            supabase.from('club_members').select('*, clubs(*)').eq('user_id', user.id), // My memberships
+            supabase.from('events').select('*, clubs(name)').eq('status', 'active').order('date', { ascending: true }), // Active events
+            supabase.from('registrations').select('*, events(*)').eq('user_id', user.id), // My registrations
+            supabase.from('certificates').select('*, events(title, date)').eq('user_id', user.id), // My certificates
+            supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20)
+        ]);
+
+        setAllClubs(clubs || []);
+        setMyClubs(memberships || []);
+        setAllEvents(events || []);
+        setMyEvents(registrations || []);
+        setMyCertificates(certs || []);
+        setNotifications(notifs || []);
+
+        // Fetch broadcast notifications (global + club-specific)
+        const activeClubIds = (memberships || []).filter(m => m.status === 'active').map(m => m.club_id);
+        let bNotifs = [];
+        // Global admin broadcasts
+        const { data: globalNotifs } = await supabase.from('broadcast_notifications')
+            .select('*, profiles:creator_id(full_name), clubs:club_id(name)')
+            .is('club_id', null).order('created_at', { ascending: false }).limit(20);
+        bNotifs = [...(globalNotifs || [])];
+        // Club-specific broadcasts
+        if (activeClubIds.length > 0) {
+            const { data: clubNotifs } = await supabase.from('broadcast_notifications')
+                .select('*, profiles:creator_id(full_name), clubs:club_id(name)')
+                .in('club_id', activeClubIds).order('created_at', { ascending: false }).limit(30);
+            bNotifs = [...bNotifs, ...(clubNotifs || [])];
+        }
+        bNotifs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setBroadcastNotifs(bNotifs);
+
+        setLoading(false);
+    }, [supabase, router]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Realtime chat subscription
+    useEffect(() => {
+        if (!selectedChatClub) return;
+        const channel = supabase.channel(`student-chat-${selectedChatClub}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `club_id=eq.${selectedChatClub}` }, async (payload) => {
+                const { data } = await supabase.from('chat_messages').select('*, profiles:sender_id(full_name)').eq('id', payload.new.id).single();
+                if (data) setChatMessages(prev => [...prev, data]);
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [selectedChatClub, supabase]);
+
+    // Auto-scroll chat
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
+
+    // Load chat messages when selecting a club
+    const selectChatClub = async (clubId) => {
+        setSelectedChatClub(clubId);
+        const { data: msgs } = await supabase.from('chat_messages')
+            .select('*, profiles:sender_id(full_name)')
+            .eq('club_id', clubId).order('created_at', { ascending: true }).limit(200);
+        setChatMessages(msgs || []);
+    };
+
+    const handleJoinClub = async (clubId) => {
+        setActionLoading({ ...actionLoading, [clubId]: true });
+        try {
+            // Check if already member
+            const existing = myClubs.find(m => m.club_id === clubId);
+            if (existing) {
+                alert('You have already joined or requested to join this club.');
+                return;
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+            await supabase.from('club_members').insert({
+                club_id: clubId,
+                user_id: user.id,
+                status: 'pending' // Default to pending
+            });
+
+            alert('Join request sent successfully!');
+            fetchData();
+        } catch (err) {
+            alert('Error joining club');
+        }
+        setActionLoading({ ...actionLoading, [clubId]: false });
+    };
+
+    const handleSendChatMessage = async (e) => {
+        e.preventDefault();
+        if (!chatInput.trim() || !selectedChatClub) return;
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error } = await supabase.from('chat_messages').insert({
+            club_id: selectedChatClub,
+            sender_id: user.id,
+            message: chatInput.trim()
+        });
+        if (!error) setChatInput('');
+    };
+
+    const handleRegisterEvent = async (eventId, type = 'individual') => {
+        setActionLoading({ ...actionLoading, [eventId]: true });
+        try {
+            // Check if already registered
+            const existing = myEvents.find(r => r.event_id === eventId);
+            if (existing) {
+                alert('You are already registered for this event.');
+                return;
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+
+            // Check capacity
+            const event = allEvents.find(e => e.id === eventId);
+            const { count } = await supabase.from('registrations').select('*', { count: 'exact', head: true }).eq('event_id', eventId);
+
+            if (event.max_participants && count >= event.max_participants) {
+                alert('Event is full!');
+                return;
+            }
+
+            // If team, ask for team name
+            let teamName = null;
+            if (type === 'team') {
+                teamName = prompt("Enter your Team Name:");
+                if (!teamName) return;
+            }
+
+            await supabase.from('registrations').insert({
+                event_id: eventId,
+                user_id: user.id,
+                registration_type: type,
+                team_name: teamName
+            });
+
+            alert('Registration successful!');
+            fetchData();
+        } catch (err) {
+            console.error(err);
+            alert('Error registering for event');
+        }
+        setActionLoading({ ...actionLoading, [eventId]: false });
+    };
+
+    const generateCertificate = async (cert) => {
+        try {
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            // Background logic would go here (drawing a nice border)
+            doc.setLineWidth(2);
+            doc.setDrawColor(99, 102, 241); // Primary color
+            doc.rect(10, 10, 277, 190);
+
+            doc.setLineWidth(1);
+            doc.setDrawColor(200, 200, 200);
+            doc.rect(15, 15, 267, 180);
+
+            // Logo
+            // Note: In a real app, you'd load the image data properly
+            // doc.addImage('/nit-logo-white.png', 'PNG', 20, 20, 30, 30);
+
+            // Header
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(28);
+            doc.setTextColor(50, 50, 50);
+            doc.text('CERTIFICATE OF PARTICIPATION', 148.5, 50, { align: 'center' });
+
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'normal');
+            doc.text('This is to certify that', 148.5, 70, { align: 'center' });
+
+            // Name
+            doc.setFontSize(24);
+            doc.setFont('times', 'bold');
+            doc.setTextColor(99, 102, 241);
+            doc.text(profile.full_name, 148.5, 85, { align: 'center' });
+
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+            doc.text(`has successfully participated in the event`, 148.5, 100, { align: 'center' });
+
+            // Event Name
+            doc.setFontSize(20);
+            doc.setFont('times', 'bold');
+            doc.text(cert.events?.title || 'Unknown Event', 148.5, 115, { align: 'center' });
+
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'normal');
+            const dateStr = cert.events?.date ? new Date(cert.events.date).toLocaleDateString() : 'N/A';
+            doc.text(`held on ${dateStr}`, 148.5, 125, { align: 'center' });
+
+            // QR Code
+            const verifyUrl = `${window.location.origin}/verify?code=${cert.unique_code}`;
+            const qrDataUrl = await QRCode.toDataURL(verifyUrl);
+            doc.addImage(qrDataUrl, 'PNG', 123.5, 130, 40, 40);
+
+            // Try to add club logo and leader signature
+            try {
+                // Find the event's club
+                const { data: eventData } = await supabase.from('events').select('club_id').eq('id', cert.event_id).single();
+                if (eventData?.club_id) {
+                    const { data: clubData } = await supabase.from('clubs').select('logo_url, leader_signature_url, name').eq('id', eventData.club_id).single();
+                    if (clubData) {
+                        let yPos = 175;
+
+                        // Add club logo at bottom-left
+                        if (clubData.logo_url) {
+                            try {
+                                const logoResp = await fetch(clubData.logo_url);
+                                const logoBlob = await logoResp.blob();
+                                const logoBase64 = await new Promise((resolve) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result);
+                                    reader.readAsDataURL(logoBlob);
+                                });
+                                doc.addImage(logoBase64, 'PNG', 25, yPos - 10, 25, 25);
+                                doc.setFontSize(8);
+                                doc.setTextColor(100, 100, 100);
+                                doc.text(clubData.name, 38, yPos + 18, { align: 'center' });
+                            } catch (e) { console.log('Could not load club logo:', e); }
+                        }
+
+                        // Add leader signature at bottom-right
+                        if (clubData.leader_signature_url) {
+                            try {
+                                const sigResp = await fetch(clubData.leader_signature_url);
+                                const sigBlob = await sigResp.blob();
+                                const sigBase64 = await new Promise((resolve) => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result);
+                                    reader.readAsDataURL(sigBlob);
+                                });
+                                doc.addImage(sigBase64, 'PNG', 220, yPos - 5, 40, 16);
+                                doc.setFontSize(8);
+                                doc.setDrawColor(100, 100, 100);
+                                doc.line(215, yPos + 13, 265, yPos + 13);
+                                doc.setTextColor(100, 100, 100);
+                                doc.text('Club Leader', 240, yPos + 18, { align: 'center' });
+                            } catch (e) { console.log('Could not load signature:', e); }
+                        }
+                    }
+                }
+            } catch (e) { console.log('Could not fetch club data for certificate:', e); }
+
+            doc.setFontSize(10);
+            doc.setTextColor(50, 50, 50);
+            doc.text(`Verify at: ${verifyUrl}`, 148.5, 195, { align: 'center' });
+            doc.text(`Certificate ID: ${cert.unique_code}`, 20, 195);
+
+            doc.save(`Certificate-${cert.events?.title}.pdf`);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to generate certificate');
+        }
+    };
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push('/login');
+    };
+
+    if (loading) {
+        return <div className="loading-screen"><div className="spinner" /><p style={{ color: 'var(--dark-400)' }}>Loading Dashboard...</p></div>;
+    }
+
+    const sidebarLinks = [
+        { key: 'overview', icon: '📊', label: 'My Dashboard' },
+        { key: 'clubs', icon: '🏛️', label: 'Join Clubs' },
+        { key: 'events', icon: '🎯', label: 'Events' },
+        { key: 'certificates', icon: '📜', label: 'Certificates', count: myCertificates.length },
+        { key: 'chat', icon: '💬', label: 'Group Chat' },
+        { key: 'notifications', icon: '🔔', label: 'Notifications', count: notifications.filter(n => !n.is_read).length + broadcastNotifs.length },
+    ];
+
+    const filteredClubs = allClubs.filter(c =>
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const filteredEvents = allEvents.filter(e =>
+        e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        e.venue.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+        <div className="dashboard-layout">
+            {/* Sidebar */}
+            <aside className="sidebar">
+                <div className="sidebar-header">
+                    <img src="/nit-logo-white.png" alt="NIT KKR" />
+                    <div>
+                        <h2>Student Panel</h2>
+                        <span>NIT Kurukshetra</span>
+                    </div>
+                </div>
+
+                <nav className="sidebar-nav">
+                    {sidebarLinks.map(link => (
+                        <button
+                            key={link.key}
+                            className={`sidebar-link ${activeTab === link.key ? 'active' : ''}`}
+                            onClick={() => setActiveTab(link.key)}
+                        >
+                            <span className="link-icon">{link.icon}</span>
+                            <span>{link.label}</span>
+                            {link.count > 0 && (
+                                <span className="badge badge-success" style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>
+                                    {link.count}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </nav>
+
+                <div className="sidebar-footer">
+                    <div style={{ fontSize: '0.85rem', color: 'var(--dark-300)', marginBottom: '4px', fontWeight: 600 }}>
+                        {profile?.full_name}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--dark-400)', marginBottom: '12px' }}>
+                        {profile?.roll_number}
+                    </div>
+                    <button onClick={handleLogout} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
+                        Logout
+                    </button>
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="dashboard-main">
+                <div className="dashboard-header">
+                    <h1>
+                        {activeTab === 'overview' && 'My Dashboard'}
+                        {activeTab === 'clubs' && 'Explore Clubs'}
+                        {activeTab === 'events' && 'Upcoming Events'}
+                        {activeTab === 'certificates' && 'My Certificates'}
+                        {activeTab === 'notifications' && 'Notifications'}
+                    </h1>
+                    <div className="user-info">
+                        <div className="user-avatar" style={{ background: 'var(--success-500)' }}>{profile?.full_name?.charAt(0)}</div>
+                    </div>
+                </div>
+
+                {/* Overview Tab */}
+                {activeTab === 'overview' && (
+                    <div className="animate-fade-in">
+                        <div className="grid-3">
+                            {[
+                                { label: 'My Clubs', value: myClubs.filter(c => c.status === 'active').length, icon: '🏛️', color: 'var(--primary-500)' },
+                                { label: 'Events Registered', value: myEvents.length, icon: '🎯', color: 'var(--accent-500)' },
+                                { label: 'Certificates', value: myCertificates.length, icon: '📜', color: 'var(--success-500)' },
+                            ].map((stat, i) => (
+                                <div key={i} className="stat-card" style={{ '--accent': stat.color }}>
+                                    <div className="stat-value">{stat.value}</div>
+                                    <div className="stat-label">{stat.label}</div>
+                                    <div className="stat-icon">{stat.icon}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="grid-2" style={{ marginTop: '24px' }}>
+                            {/* My Active Clubs */}
+                            <div className="card">
+                                <div className="section-header">
+                                    <h2>My Clubs</h2>
+                                </div>
+                                {myClubs.length === 0 ? (
+                                    <div className="empty-state" style={{ padding: '20px' }}>
+                                        <p>You haven&apos;t joined any clubs yet.</p>
+                                        <button onClick={() => setActiveTab('clubs')} className="btn btn-primary btn-sm mt-1">Browse Clubs</button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {myClubs.slice(0, 5).map(member => (
+                                            <div key={member.id} style={{
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                padding: '10px 14px', background: 'var(--dark-700)', borderRadius: 'var(--radius-md)'
+                                            }}>
+                                                <span style={{ fontWeight: 600 }}>{member.clubs?.name}</span>
+                                                <span className={`badge ${member.status === 'active' ? 'badge-success' : 'badge-warning'}`}>
+                                                    {member.status}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* My Upcoming Events */}
+                            <div className="card">
+                                <div className="section-header">
+                                    <h2>📅 My Registered Events</h2>
+                                </div>
+                                {myEvents.length === 0 ? (
+                                    <div className="empty-state" style={{ padding: '20px' }}>
+                                        <p>No upcoming events.</p>
+                                        <button onClick={() => setActiveTab('events')} className="btn btn-primary btn-sm mt-1">Find Events</button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {myEvents.slice(0, 5).map(reg => (
+                                            <div key={reg.id} style={{
+                                                padding: '10px 14px', background: 'var(--dark-700)', borderRadius: 'var(--radius-md)'
+                                            }}>
+                                                <div style={{ fontWeight: 600 }}>{reg.events?.title}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--dark-400)', marginTop: '2px' }}>
+                                                    {reg.events?.date ? new Date(reg.events.date).toLocaleDateString() : ''} · {reg.events?.venue}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Clubs Tab */}
+                {activeTab === 'clubs' && (
+                    <div className="animate-fade-in">
+                        <div style={{ marginBottom: '24px' }}>
+                            <div className="search-bar">
+                                <span className="search-icon">🔍</span>
+                                <input
+                                    type="text"
+                                    placeholder="Search clubs..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid-3">
+                            {filteredClubs.map(club => {
+                                const membership = myClubs.find(m => m.club_id === club.id);
+                                return (
+                                    <div key={club.id} className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                                            <div style={{
+                                                width: '48px', height: '48px', background: 'var(--dark-700)', borderRadius: '50%',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
+                                            }}>
+                                                🏛️
+                                            </div>
+                                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{club.name}</h3>
+                                        </div>
+                                        <p style={{ color: 'var(--dark-400)', fontSize: '0.9rem', flex: 1, marginBottom: '16px' }}>
+                                            {club.description || 'No description available'}
+                                        </p>
+                                        {membership ? (
+                                            <button className="btn btn-secondary btn-sm" disabled style={{ width: '100%' }}>
+                                                {membership.status === 'active' ? 'Member' : 'Requested'}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleJoinClub(club.id)}
+                                                className="btn btn-primary btn-sm"
+                                                style={{ width: '100%' }}
+                                                disabled={actionLoading[club.id]}
+                                            >
+                                                {actionLoading[club.id] ? 'Joining...' : 'Join Club'}
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {filteredClubs.length === 0 && <div className="empty-state">No clubs found matching your search.</div>}
+                    </div>
+                )}
+
+                {/* Events Tab */}
+                {activeTab === 'events' && (
+                    <div className="animate-fade-in">
+                        <div style={{ marginBottom: '24px' }}>
+                            <div className="search-bar">
+                                <span className="search-icon">🔍</span>
+                                <input
+                                    type="text"
+                                    placeholder="Search events..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid-2">
+                            {filteredEvents.map(event => {
+                                const isRegistered = myEvents.some(r => r.event_id === event.id);
+                                const isFull = event.max_participants && myEvents.filter(r => r.event_id === event.id).length >= event.max_participants; // This logic needs backend count, approximating for UI 
+
+                                return (
+                                    <div key={event.id} className="card">
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                                            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>{event.title}</h3>
+                                            <span className="badge badge-primary">{event.clubs?.name}</span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '0.9rem', color: 'var(--dark-300)' }}>
+                                            <span>📅 {new Date(event.date).toLocaleString()}</span>
+                                            <span>📍 {event.venue}</span>
+                                        </div>
+
+                                        <p style={{ color: 'var(--dark-400)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.6 }}>
+                                            {event.description}
+                                        </p>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--dark-700)', paddingTop: '16px' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--dark-400)' }}>Type: <strong style={{ color: 'white' }}>{event.registration_type}</strong></span>
+                                                {/* Capacity would be nice here */}
+                                            </div>
+
+                                            {isRegistered ? (
+                                                <button className="btn btn-success btn-sm" disabled>
+                                                    ✅ Registered
+                                                </button>
+                                            ) : (
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button
+                                                        onClick={() => handleRegisterEvent(event.id, event.registration_type)}
+                                                        className="btn btn-primary btn-sm"
+                                                        disabled={actionLoading[event.id]}
+                                                    >
+                                                        {actionLoading[event.id] ? '...' : `Register (${event.registration_type})`}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {filteredEvents.length === 0 && <div className="empty-state">No events found matching your search.</div>}
+                    </div>
+                )}
+
+                {activeTab === 'certificates' && (
+                    <div className="animate-fade-in">
+                        <div className="card">
+                            <div className="section-header">
+                                <h2>My Certificates</h2>
+                                <span className="badge badge-success">{myCertificates.length}</span>
+                            </div>
+
+                            {myCertificates.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-icon">📜</div>
+                                    <h3>No Certificates Yet</h3>
+                                    <p>Participate in events to earn certificates!</p>
+                                </div>
+                            ) : (
+                                <div className="grid-3">
+                                    {myCertificates.map(cert => (
+                                        <div key={cert.id} className="glass-card" style={{ padding: '24px', textAlign: 'center', border: '1px solid var(--primary-900)' }}>
+                                            <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🎓</div>
+                                            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '4px' }}>{cert.events?.title}</h3>
+                                            <p style={{ fontSize: '0.8rem', color: 'var(--dark-400)', marginBottom: '16px' }}>
+                                                Issued: {new Date(cert.issue_date).toLocaleDateString()}
+                                            </p>
+                                            <button onClick={() => generateCertificate(cert)} className="btn btn-primary btn-sm" style={{ width: '100%' }}>
+                                                Download PDF
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Group Chat Tab */}
+                {activeTab === 'chat' && (
+                    <div className="animate-fade-in">
+                        {(() => {
+                            const activeClubMemberships = myClubs.filter(m => m.status === 'active');
+                            if (activeClubMemberships.length === 0) return (
+                                <div className="card">
+                                    <div className="empty-state">
+                                        <div className="empty-icon">💬</div>
+                                        <h3>No Club Chats Available</h3>
+                                        <p>Join a club and get approved to access group chats.</p>
+                                    </div>
+                                </div>
+                            );
+                            return (
+                                <>
+                                    <div className="club-selector">
+                                        {activeClubMemberships.map(m => (
+                                            <button key={m.club_id}
+                                                className={`club-selector-btn ${selectedChatClub === m.club_id ? 'active' : ''}`}
+                                                onClick={() => selectChatClub(m.club_id)}>
+                                                {m.clubs?.name || 'Club'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {selectedChatClub ? (
+                                        <div className="chat-container">
+                                            <div className="chat-header">
+                                                <span style={{ fontSize: '1.3rem' }}>💬</span>
+                                                <h3>{activeClubMemberships.find(m => m.club_id === selectedChatClub)?.clubs?.name} Chat</h3>
+                                            </div>
+                                            <div className="chat-messages">
+                                                {chatMessages.length === 0 ? (
+                                                    <div className="empty-state" style={{ padding: '40px' }}>
+                                                        <div className="empty-icon">💬</div>
+                                                        <h3>No messages yet</h3>
+                                                        <p>Be the first to say something!</p>
+                                                    </div>
+                                                ) : (
+                                                    chatMessages.map(msg => (
+                                                        <div key={msg.id} className={`chat-bubble ${msg.sender_id === profile?.id ? 'chat-bubble-own' : ''}`}>
+                                                            <div className="chat-sender">{msg.profiles?.full_name || 'Unknown'}</div>
+                                                            <div>{msg.message}</div>
+                                                            <div className="chat-time">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                                <div ref={chatEndRef} />
+                                            </div>
+                                            <form className="chat-input-container" onSubmit={handleSendChatMessage}>
+                                                <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." />
+                                                <button type="submit" className="chat-send-btn" disabled={!chatInput.trim()}>➤</button>
+                                            </form>
+                                        </div>
+                                    ) : (
+                                        <div className="card">
+                                            <div className="empty-state" style={{ padding: '40px' }}>
+                                                <div className="empty-icon">👆</div>
+                                                <h3>Select a Club</h3>
+                                                <p>Choose a club above to open its group chat.</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()}
+                    </div>
+                )}
+
+                {/* Notifications Tab */}
+                {activeTab === 'notifications' && (
+                    <div className="animate-fade-in">
+                        {/* Broadcast Notifications */}
+                        {broadcastNotifs.length > 0 && (
+                            <div className="card" style={{ marginBottom: '24px' }}>
+                                <div className="section-header">
+                                    <h2>📢 Broadcast Notifications</h2>
+                                    <span className="section-count">{broadcastNotifs.length}</span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {broadcastNotifs.map(notif => (
+                                        <div key={notif.id} style={{ padding: '14px 16px', background: 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }}>{notif.title}</h4>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {notif.clubs?.name && <span className="badge badge-primary">{notif.clubs.name}</span>}
+                                                    {!notif.clubs && <span className="badge badge-warning">Admin</span>}
+                                                    <span style={{ color: 'var(--dark-500)', fontSize: '0.75rem' }}>{new Date(notif.created_at).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                            <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginTop: '4px' }}>{notif.message}</p>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--dark-500)', marginTop: '6px' }}>By: {notif.profiles?.full_name || 'System'}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* System Notifications */}
+                        <div className="card">
+                            <div className="section-header"><h2>🔔 System Notifications</h2></div>
+                            {notifications.length === 0 ? (
+                                <div className="empty-state" style={{ padding: '24px' }}><p>No system notifications</p></div>
+                            ) : (
+                                <>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                                        <button onClick={async () => {
+                                            const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+                                            if (unreadIds.length > 0) {
+                                                await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
+                                                fetchData();
+                                            }
+                                        }} className="btn btn-secondary btn-sm">Mark All as Read</button>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {notifications.map(notif => (
+                                            <div key={notif.id} style={{ padding: '14px 16px', background: notif.is_read ? 'transparent' : 'rgba(99,102,241,0.05)', borderRadius: 'var(--radius-md)', border: `1px solid ${notif.is_read ? 'var(--dark-700)' : 'rgba(99,102,241,0.2)'}`, position: 'relative' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600 }}>{notif.title}</h4>
+                                                    <span style={{ color: 'var(--dark-500)', fontSize: '0.75rem' }}>{new Date(notif.created_at).toLocaleString()}</span>
+                                                </div>
+                                                <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginTop: '4px', paddingRight: '24px' }}>{notif.message}</p>
+                                                {!notif.is_read && (
+                                                    <button onClick={async (e) => { e.stopPropagation(); await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id); fetchData(); }}
+                                                        style={{ position: 'absolute', bottom: '10px', right: '10px', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary-500)', fontSize: '1.2rem' }} title="Mark as read">✓</button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </main>
+        </div>
+    );
+}
