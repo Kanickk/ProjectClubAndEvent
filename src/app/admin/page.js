@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
@@ -8,7 +8,8 @@ import Footer from '@/components/Footer';
 
 export default function AdminDashboard() {
     const router = useRouter();
-    const supabase = createClient();
+    const supabaseRef = useRef(createClient());
+    const supabase = supabaseRef.current;
     const [profile, setProfile] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
@@ -71,12 +72,12 @@ export default function AdminDashboard() {
             students: (users || []).filter(u => u.role === 'student' && u.status === 'active').length,
         });
         setLoading(false);
-    }, [supabase, router]);
+    }, [router]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const handleAction = async (action, id, type) => {
-        setActionLoading({ ...actionLoading, [id]: true });
+        setActionLoading(prev => ({ ...prev, [id]: true }));
         try {
             if (action === 'approve' && type === 'club_leader') {
                 await supabase.rpc('approve_club_leader', { target_user_id: id });
@@ -93,12 +94,12 @@ export default function AdminDashboard() {
         } catch (err) {
             console.error(err);
         }
-        setActionLoading({ ...actionLoading, [id]: false });
+        setActionLoading(prev => ({ ...prev, [id]: false }));
     };
 
     const handleCreateNotification = async (e) => {
         e.preventDefault();
-        setActionLoading({ ...actionLoading, createNotif: true });
+        setActionLoading(prev => ({ ...prev, createNotif: true }));
         try {
             const { data: { user } } = await supabase.auth.getUser();
             const { error } = await supabase.from('broadcast_notifications').insert({
@@ -115,7 +116,7 @@ export default function AdminDashboard() {
         } catch (err) {
             alert('Error creating notification: ' + err.message);
         }
-        setActionLoading({ ...actionLoading, createNotif: false });
+        setActionLoading(prev => ({ ...prev, createNotif: false }));
     };
 
     const handleLogout = async () => {

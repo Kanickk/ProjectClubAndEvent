@@ -7,7 +7,8 @@ import { createClient } from '@/lib/supabase-browser';
 
 export default function ClubLeaderDashboard() {
     const router = useRouter();
-    const supabase = createClient();
+    const supabaseRef = useRef(createClient());
+    const supabase = supabaseRef.current;
     const [profile, setProfile] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
@@ -89,7 +90,7 @@ export default function ClubLeaderDashboard() {
         }
 
         setLoading(false);
-    }, [supabase, router]);
+    }, [router]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -111,7 +112,7 @@ export default function ClubLeaderDashboard() {
     }, [chatMessages]);
 
     const handleMemberAction = async (memberId, action) => {
-        setActionLoading({ ...actionLoading, [memberId]: true });
+        setActionLoading(prev => ({ ...prev, [memberId]: true }));
         try {
             const newStatus = action === 'approve' ? 'active' : 'rejected';
             await supabase.from('club_members').update({ status: newStatus }).eq('id', memberId);
@@ -119,12 +120,12 @@ export default function ClubLeaderDashboard() {
         } catch (err) {
             alert('Error updating member');
         }
-        setActionLoading({ ...actionLoading, [memberId]: false });
+        setActionLoading(prev => ({ ...prev, [memberId]: false }));
     };
 
     const handleCreateEvent = async (e) => {
         e.preventDefault();
-        setActionLoading({ ...actionLoading, createEvent: true });
+        setActionLoading(prev => ({ ...prev, createEvent: true }));
         try {
             const { error } = await supabase.from('events').insert({
                 ...eventForm,
@@ -142,7 +143,7 @@ export default function ClubLeaderDashboard() {
         } catch (err) {
             alert('Error creating event: ' + err.message);
         }
-        setActionLoading({ ...actionLoading, createEvent: false });
+        setActionLoading(prev => ({ ...prev, createEvent: false }));
     };
 
     const handleUpdateClub = async (e) => {
@@ -161,7 +162,7 @@ export default function ClubLeaderDashboard() {
     };
 
     const handleGenerateCertificates = async (eventId) => {
-        setActionLoading({ ...actionLoading, [`cert_${eventId}`]: true });
+        setActionLoading(prev => ({ ...prev, [`cert_${eventId}`]: true }));
         try {
             const { data, error } = await supabase.rpc('generate_certificates_for_event', { target_event_id: eventId });
             if (error) throw error;
@@ -170,7 +171,7 @@ export default function ClubLeaderDashboard() {
         } catch (err) {
             alert('Error generating certificates: ' + err.message);
         }
-        setActionLoading({ ...actionLoading, [`cert_${eventId}`]: false });
+        setActionLoading(prev => ({ ...prev, [`cert_${eventId}`]: false }));
     };
 
     const handleSendMessage = async (e) => {

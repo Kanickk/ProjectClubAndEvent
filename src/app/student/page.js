@@ -10,7 +10,8 @@ import QRCode from 'qrcode';
 
 export default function StudentDashboard() {
     const router = useRouter();
-    const supabase = createClient();
+    const supabaseRef = useRef(createClient());
+    const supabase = supabaseRef.current;
     const [profile, setProfile] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ export default function StudentDashboard() {
         setBroadcastNotifs(bNotifs);
 
         setLoading(false);
-    }, [supabase, router]);
+    }, [router]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -114,7 +115,7 @@ export default function StudentDashboard() {
     };
 
     const handleJoinClub = async (clubId) => {
-        setActionLoading({ ...actionLoading, [clubId]: true });
+        setActionLoading(prev => ({ ...prev, [clubId]: true }));
         try {
             // Check if already member
             const existing = myClubs.find(m => m.club_id === clubId);
@@ -135,7 +136,7 @@ export default function StudentDashboard() {
         } catch (err) {
             alert('Error joining club');
         }
-        setActionLoading({ ...actionLoading, [clubId]: false });
+        setActionLoading(prev => ({ ...prev, [clubId]: false }));
     };
 
     const handleSendChatMessage = async (e) => {
@@ -151,7 +152,7 @@ export default function StudentDashboard() {
     };
 
     const handleRegisterEvent = async (eventId, type = 'individual') => {
-        setActionLoading({ ...actionLoading, [eventId]: true });
+        setActionLoading(prev => ({ ...prev, [eventId]: true }));
         try {
             // Check if already registered
             const existing = myEvents.find(r => r.event_id === eventId);
@@ -191,7 +192,7 @@ export default function StudentDashboard() {
             console.error(err);
             alert('Error registering for event');
         }
-        setActionLoading({ ...actionLoading, [eventId]: false });
+        setActionLoading(prev => ({ ...prev, [eventId]: false }));
     };
 
     const generateCertificate = async (cert) => {
@@ -247,7 +248,7 @@ export default function StudentDashboard() {
             doc.text(`held on ${dateStr}`, 148.5, 125, { align: 'center' });
 
             // QR Code
-            const verifyUrl = `${window.location.origin}/verify?code=${cert.unique_code}`;
+            const verifyUrl = `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/verify?code=${cert.unique_code}`;
             const qrDataUrl = await QRCode.toDataURL(verifyUrl);
             doc.addImage(qrDataUrl, 'PNG', 123.5, 130, 40, 40);
 
