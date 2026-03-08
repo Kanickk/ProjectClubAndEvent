@@ -726,6 +726,18 @@ textarea.form-input {
   }
 }
 
+@keyframes blink-caret {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
 .loading-screen {
   display: flex;
   align-items: center;

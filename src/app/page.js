@@ -3,12 +3,63 @@
 import Link from 'next/link';
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase-browser';
+
+const HERO_LINES = [
+    'Code. Create. Celebrate.',
+    'From Hackathons to DJ Nights.',
+    'From Innovation to Celebration.',
+    'One Campus. Infinite Vibes.',
+    'Welcome to the Experience',
+];
+
+const TYPING_SPEED = 70;
+const DELETING_SPEED = 40;
+const PAUSE_AFTER_TYPING = 1800;
+const PAUSE_AFTER_DELETING = 400;
 
 export default function HomePage() {
     const [user, setUser] = useState(null);
     const [profile, setProfile] = useState(null);
+    const [lineIndex, setLineIndex] = useState(0);
+    const [displayedText, setDisplayedText] = useState('');
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // Typing animation effect
+    useEffect(() => {
+        const currentLine = HERO_LINES[lineIndex];
+        let timeout;
+
+        if (!isDeleting) {
+            // Typing forward
+            if (displayedText.length < currentLine.length) {
+                timeout = setTimeout(() => {
+                    setDisplayedText(currentLine.slice(0, displayedText.length + 1));
+                }, TYPING_SPEED);
+            } else {
+                // Finished typing — pause then start deleting
+                timeout = setTimeout(() => {
+                    setIsDeleting(true);
+                }, PAUSE_AFTER_TYPING);
+            }
+        } else {
+            // Deleting
+            if (displayedText.length > 0) {
+                timeout = setTimeout(() => {
+                    setDisplayedText(displayedText.slice(0, -1));
+                }, DELETING_SPEED);
+            } else {
+                // Finished deleting — move to next line
+                timeout = setTimeout(() => {
+                    setIsDeleting(false);
+                    setLineIndex((prev) => (prev + 1) % HERO_LINES.length);
+                }, PAUSE_AFTER_DELETING);
+            }
+        }
+
+        return () => clearTimeout(timeout);
+    }, [displayedText, isDeleting, lineIndex]);
 
     useEffect(() => {
         const supabase = createClient();
@@ -84,25 +135,45 @@ export default function HomePage() {
                         NATIONAL INSTITUTE OF TECHNOLOGY, KURUKSHETRA
                     </div>
 
-                    <h1 style={{
-                        fontSize: 'clamp(2rem, 5vw, 3.5rem)',
-                        fontWeight: 900,
-                        lineHeight: 1.1,
-                        marginBottom: '16px',
-                        background: 'linear-gradient(135deg, #fff 0%, var(--primary-200) 100%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text'
+                    {/* Typing Animation */}
+                    <div style={{
+                        minHeight: 'clamp(3.5rem, 8vw, 5.5rem)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: '16px'
                     }}>
-                        Club & Event<br />Management System
-                    </h1>
+                        <h1 style={{
+                            fontSize: 'clamp(1.8rem, 4.5vw, 3.2rem)',
+                            fontWeight: 900,
+                            lineHeight: 1.2,
+                            background: 'linear-gradient(135deg, #fff 0%, var(--primary-200) 100%)',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                            backgroundClip: 'text',
+                            margin: 0,
+                        }}>
+                            {displayedText}
+                            <span style={{
+                                display: 'inline-block',
+                                width: '3px',
+                                height: '1em',
+                                background: 'var(--primary-400)',
+                                marginLeft: '4px',
+                                verticalAlign: 'text-bottom',
+                                animation: 'blink-caret 0.75s step-end infinite',
+                                WebkitTextFillColor: 'var(--primary-400)',
+                            }} />
+                        </h1>
+                    </div>
 
                     <p style={{
-                        fontSize: '1.1rem',
+                        fontSize: '1rem',
                         color: 'var(--dark-300)',
                         maxWidth: '600px',
                         margin: '0 auto 32px',
-                        lineHeight: 1.7
+                        lineHeight: 1.7,
+                        opacity: 0.85,
                     }}>
                         Discover clubs, participate in events, earn certificates, and track your campus journey — all in one place.
                     </p>
