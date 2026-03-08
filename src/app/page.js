@@ -7,10 +7,10 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 
 const HERO_LINES = [
-    'Code. Create. Celebrate.',
-    'From Hackathons to DJ Nights.',
-    'From Innovation to Celebration.',
-    'One Campus. Infinite Vibes.',
+    'Code  Create  Celebrate',
+    'From Hackathons to DJ Nights',
+    'From Innovation to Celebration',
+    'One Campus  Infinite Vibes',
     'Welcome to the Experience',
 ];
 
@@ -153,7 +153,9 @@ export default function HomePage() {
                             backgroundClip: 'text',
                             margin: 0,
                         }}>
-                            {displayedText}
+                            {lineIndex === HERO_LINES.length - 1 && displayedText.includes('Experience')
+                                ? <>{displayedText.split('Experience')[0]}<span style={{ WebkitTextFillColor: 'var(--primary-400)', color: 'var(--primary-400)' }}>Experience</span>{displayedText.split('Experience')[1]}</>
+                                : displayedText}
                             <span style={{
                                 display: 'inline-block',
                                 width: '3px',
