@@ -17,6 +17,9 @@ export default function StudentDashboard() {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
+    const [feedbackForm, setFeedbackForm] = useState({ eventId: null, rating: 0, comment: '' });
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Data
     const [myClubs, setMyClubs] = useState([]);
@@ -163,8 +166,14 @@ export default function StudentDashboard() {
 
             const { data: { user } } = await supabase.auth.getUser();
 
-            // Check capacity
+            // Check registration deadline
             const event = allEvents.find(e => e.id === eventId);
+            if (event.registration_deadline && new Date(event.registration_deadline) < new Date()) {
+                alert('Registration deadline has passed!');
+                return;
+            }
+
+            // Check capacity
             const { count } = await supabase.from('registrations').select('*', { count: 'exact', head: true }).eq('event_id', eventId);
 
             if (event.max_participants && count >= event.max_participants) {
@@ -193,6 +202,52 @@ export default function StudentDashboard() {
             alert('Error registering for event');
         }
         setActionLoading(prev => ({ ...prev, [eventId]: false }));
+    };
+
+    const handleUnregisterEvent = async (registrationId, eventTitle) => {
+        if (!confirm(`Are you sure you want to unregister from "${eventTitle}"?`)) return;
+        setActionLoading(prev => ({ ...prev, [`unreg_${registrationId}`]: true }));
+        try {
+            await supabase.from('registrations').delete().eq('id', registrationId);
+            alert('Successfully unregistered from event.');
+            fetchData();
+        } catch (err) {
+            alert('Error unregistering from event.');
+        }
+        setActionLoading(prev => ({ ...prev, [`unreg_${registrationId}`]: false }));
+    };
+
+    const handleSubmitFeedback = async (e) => {
+        e.preventDefault();
+        if (!feedbackForm.eventId || feedbackForm.rating === 0) {
+            alert('Please select a rating.');
+            return;
+        }
+        setActionLoading(prev => ({ ...prev, submitFeedback: true }));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            // Check if feedback already exists
+            const { data: existing } = await supabase.from('event_feedback')
+                .select('id').eq('event_id', feedbackForm.eventId).eq('user_id', user.id).single();
+            if (existing) {
+                alert('You have already submitted feedback for this event.');
+                setShowFeedbackModal(false);
+                return;
+            }
+            const { error } = await supabase.from('event_feedback').insert({
+                event_id: feedbackForm.eventId,
+                user_id: user.id,
+                rating: feedbackForm.rating,
+                comment: feedbackForm.comment
+            });
+            if (error) throw error;
+            alert('Feedback submitted! Thank you.');
+            setShowFeedbackModal(false);
+            setFeedbackForm({ eventId: null, rating: 0, comment: '' });
+        } catch (err) {
+            alert('Error submitting feedback: ' + err.message);
+        }
+        setActionLoading(prev => ({ ...prev, submitFeedback: false }));
     };
 
     const generateCertificate = async (cert) => {
@@ -342,8 +397,13 @@ export default function StudentDashboard() {
 
     return (
         <div className="dashboard-layout">
+            {/* Mobile hamburger */}
+            <button className="hamburger-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                {sidebarOpen ? '✕' : '☰'}
+            </button>
+            <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
             {/* Sidebar */}
-            <aside className="sidebar">
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <img src="/nit-logo-white.png" alt="NIT KKR" />
                     <div>
@@ -377,6 +437,7 @@ export default function StudentDashboard() {
                     <div style={{ fontSize: '0.75rem', color: 'var(--dark-400)', marginBottom: '12px' }}>
                         {profile?.roll_number}
                     </div>
+                    <Link href="/about" style={{ fontSize: '0.8rem', color: 'var(--dark-500)', display: 'block', marginBottom: '8px' }}>About Us</Link>
                     <button onClick={handleLogout} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
                         Logout
                     </button>
@@ -391,6 +452,7 @@ export default function StudentDashboard() {
                         {activeTab === 'clubs' && 'Explore Clubs'}
                         {activeTab === 'events' && 'Upcoming Events'}
                         {activeTab === 'certificates' && 'My Certificates'}
+                        {activeTab === 'chat' && 'Group Chat'}
                         {activeTab === 'notifications' && 'Notifications'}
                     </h1>
                     <div className="user-info">
@@ -457,12 +519,23 @@ export default function StudentDashboard() {
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         {myEvents.slice(0, 5).map(reg => (
                                             <div key={reg.id} style={{
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                                                 padding: '10px 14px', background: 'var(--dark-700)', borderRadius: 'var(--radius-md)'
                                             }}>
-                                                <div style={{ fontWeight: 600 }}>{reg.events?.title}</div>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--dark-400)', marginTop: '2px' }}>
-                                                    {reg.events?.date ? new Date(reg.events.date).toLocaleDateString() : ''} · {reg.events?.venue}
+                                                <div>
+                                                    <div style={{ fontWeight: 600 }}>{reg.events?.title}</div>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--dark-400)', marginTop: '2px' }}>
+                                                        {reg.events?.date ? new Date(reg.events.date).toLocaleDateString() : ''} · {reg.events?.venue}
+                                                    </div>
                                                 </div>
+                                                <button
+                                                    onClick={() => handleUnregisterEvent(reg.id, reg.events?.title)}
+                                                    className="btn btn-danger btn-sm"
+                                                    disabled={actionLoading[`unreg_${reg.id}`]}
+                                                    style={{ flexShrink: 0 }}
+                                                >
+                                                    {actionLoading[`unreg_${reg.id}`] ? '...' : 'Unregister'}
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
@@ -493,12 +566,19 @@ export default function StudentDashboard() {
                                 return (
                                     <div key={club.id} className="card" style={{ display: 'flex', flexDirection: 'column' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                                            <div style={{
-                                                width: '48px', height: '48px', background: 'var(--dark-700)', borderRadius: '50%',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
-                                            }}>
-                                                🏛️
-                                            </div>
+                                            {club.logo_url ? (
+                                                <img src={club.logo_url} alt={club.name} style={{
+                                                    width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover',
+                                                    border: '2px solid var(--primary-500)'
+                                                }} />
+                                            ) : (
+                                                <div style={{
+                                                    width: '48px', height: '48px', background: 'linear-gradient(135deg, var(--primary-600), var(--primary-400))', borderRadius: '50%',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
+                                                }}>
+                                                    🏛️
+                                                </div>
+                                            )}
                                             <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>{club.name}</h3>
                                         </div>
                                         <p style={{ color: 'var(--dark-400)', fontSize: '0.9rem', flex: 1, marginBottom: '16px' }}>
@@ -506,7 +586,7 @@ export default function StudentDashboard() {
                                         </p>
                                         {membership ? (
                                             <button className="btn btn-secondary btn-sm" disabled style={{ width: '100%' }}>
-                                                {membership.status === 'active' ? 'Member' : 'Requested'}
+                                                {membership.status === 'active' ? '✅ Member' : '⏳ Requested'}
                                             </button>
                                         ) : (
                                             <button
@@ -544,44 +624,69 @@ export default function StudentDashboard() {
                         <div className="grid-2">
                             {filteredEvents.map(event => {
                                 const isRegistered = myEvents.some(r => r.event_id === event.id);
-                                const isFull = event.max_participants && myEvents.filter(r => r.event_id === event.id).length >= event.max_participants; // This logic needs backend count, approximating for UI 
+                                const myReg = myEvents.find(r => r.event_id === event.id);
+                                const deadlinePassed = event.registration_deadline && new Date(event.registration_deadline) < new Date();
 
                                 return (
                                     <div key={event.id} className="card">
+                                        {event.poster_url && (
+                                            <div style={{ marginBottom: '16px', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                                <img src={event.poster_url} alt={event.title} style={{ width: '100%', maxHeight: '200px', objectFit: 'cover' }} />
+                                            </div>
+                                        )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                                             <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>{event.title}</h3>
                                             <span className="badge badge-primary">{event.clubs?.name}</span>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '0.9rem', color: 'var(--dark-300)' }}>
+                                        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '0.9rem', color: 'var(--dark-300)', flexWrap: 'wrap' }}>
                                             <span>📅 {new Date(event.date).toLocaleString()}</span>
                                             <span>📍 {event.venue}</span>
                                         </div>
 
-                                        <p style={{ color: 'var(--dark-400)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.6 }}>
+                                        <p style={{ color: 'var(--dark-400)', fontSize: '0.9rem', marginBottom: '12px', lineHeight: 1.6 }}>
                                             {event.description}
                                         </p>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--dark-700)', paddingTop: '16px' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--dark-400)' }}>Type: <strong style={{ color: 'white' }}>{event.registration_type}</strong></span>
-                                                {/* Capacity would be nice here */}
-                                            </div>
+                                        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', fontSize: '0.8rem', color: 'var(--dark-400)', flexWrap: 'wrap' }}>
+                                            <span>👥 Max: {event.max_participants || '∞'}</span>
+                                            <span>📝 Type: {event.registration_type}</span>
+                                            {event.registration_deadline && (
+                                                <span style={{ color: deadlinePassed ? 'var(--error-400)' : 'var(--success-400)' }}>
+                                                    ⏰ Deadline: {new Date(event.registration_deadline).toLocaleString()}
+                                                    {deadlinePassed && ' (Passed)'}
+                                                </span>
+                                            )}
+                                        </div>
 
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--dark-700)', paddingTop: '16px', gap: '8px', flexWrap: 'wrap' }}>
                                             {isRegistered ? (
-                                                <button className="btn btn-success btn-sm" disabled>
-                                                    ✅ Registered
-                                                </button>
-                                            ) : (
-                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <button className="btn btn-success btn-sm" disabled>
+                                                        ✅ Registered
+                                                    </button>
                                                     <button
-                                                        onClick={() => handleRegisterEvent(event.id, event.registration_type)}
-                                                        className="btn btn-primary btn-sm"
-                                                        disabled={actionLoading[event.id]}
+                                                        onClick={() => handleUnregisterEvent(myReg.id, event.title)}
+                                                        className="btn btn-danger btn-sm"
+                                                        disabled={actionLoading[`unreg_${myReg?.id}`]}
                                                     >
-                                                        {actionLoading[event.id] ? '...' : `Register (${event.registration_type})`}
+                                                        {actionLoading[`unreg_${myReg?.id}`] ? '...' : 'Unregister'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setFeedbackForm({ eventId: event.id, rating: 0, comment: '' }); setShowFeedbackModal(true); }}
+                                                        className="btn btn-secondary btn-sm"
+                                                    >
+                                                        ⭐ Feedback
                                                     </button>
                                                 </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleRegisterEvent(event.id, event.registration_type)}
+                                                    className="btn btn-primary btn-sm"
+                                                    disabled={actionLoading[event.id] || deadlinePassed}
+                                                >
+                                                    {deadlinePassed ? 'Deadline Passed' : actionLoading[event.id] ? '...' : `Register (${event.registration_type})`}
+                                                </button>
                                             )}
                                         </div>
                                     </div>
@@ -589,6 +694,43 @@ export default function StudentDashboard() {
                             })}
                         </div>
                         {filteredEvents.length === 0 && <div className="empty-state">No events found matching your search.</div>}
+
+                        {/* Feedback Modal */}
+                        {showFeedbackModal && (
+                            <div className="modal-overlay" onClick={() => setShowFeedbackModal(false)}>
+                                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+                                    <div className="modal-header">
+                                        <h2>⭐ Submit Feedback</h2>
+                                        <button className="modal-close" onClick={() => setShowFeedbackModal(false)}>×</button>
+                                    </div>
+                                    <form onSubmit={handleSubmitFeedback}>
+                                        <div className="form-group">
+                                            <label>Rating</label>
+                                            <div style={{ display: 'flex', gap: '8px', fontSize: '1.8rem', cursor: 'pointer' }}>
+                                                {[1, 2, 3, 4, 5].map(star => (
+                                                    <span key={star}
+                                                        onClick={() => setFeedbackForm({ ...feedbackForm, rating: star })}
+                                                        style={{ color: star <= feedbackForm.rating ? 'var(--accent-400)' : 'var(--dark-600)', transition: 'color 0.2s' }}
+                                                    >★</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Comment (optional)</label>
+                                            <textarea className="form-input" value={feedbackForm.comment}
+                                                onChange={e => setFeedbackForm({ ...feedbackForm, comment: e.target.value })}
+                                                rows={3} placeholder="Share your experience..." />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                            <button type="submit" className="btn btn-primary" disabled={actionLoading.submitFeedback || feedbackForm.rating === 0}>
+                                                {actionLoading.submitFeedback ? 'Submitting...' : 'Submit Feedback'}
+                                            </button>
+                                            <button type="button" onClick={() => setShowFeedbackModal(false)} className="btn btn-secondary">Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
