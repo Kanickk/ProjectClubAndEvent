@@ -11,6 +11,7 @@ function LoginForm() {
     const searchParams = useSearchParams();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(searchParams.get('error') || '');
     const [message, setMessage] = useState(searchParams.get('message') || '');
@@ -154,14 +155,20 @@ function LoginForm() {
 
                             <div className="form-group">
                                 <label>Password</label>
-                                <input
-                                    type="password"
-                                    className="form-input"
-                                    placeholder="Enter your password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    required
-                                />
+                                <div className="password-field-wrapper">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        className="form-input"
+                                        placeholder="Enter your password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                        style={{ paddingRight: '40px' }}
+                                    />
+                                    <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)}>
+                                        {showPassword ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
                             </div>
 
                             <div style={{ textAlign: 'right', marginBottom: '12px' }}>

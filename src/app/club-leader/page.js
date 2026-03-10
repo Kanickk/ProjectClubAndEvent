@@ -13,6 +13,7 @@ export default function ClubLeaderDashboard() {
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState({});
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Data
     const [myClub, setMyClub] = useState(null);
@@ -33,7 +34,7 @@ export default function ClubLeaderDashboard() {
     const [showEditClub, setShowEditClub] = useState(false);
     const [eventForm, setEventForm] = useState({
         title: '', description: '', date: '', venue: '', category: '',
-        max_participants: 100, registration_type: 'individual', registration_deadline: ''
+        max_participants: 100, registration_type: 'individual', registration_deadline: '', poster: null
     });
     const [clubForm, setClubForm] = useState({ name: '', description: '' });
 
@@ -112,6 +113,7 @@ export default function ClubLeaderDashboard() {
     }, [chatMessages]);
 
     const handleMemberAction = async (memberId, action) => {
+        if (!confirm(`Are you sure you want to ${action} this member?`)) return;
         setActionLoading(prev => ({ ...prev, [memberId]: true }));
         try {
             const newStatus = action === 'approve' ? 'active' : 'rejected';
@@ -127,23 +129,51 @@ export default function ClubLeaderDashboard() {
         e.preventDefault();
         setActionLoading(prev => ({ ...prev, createEvent: true }));
         try {
+            let posterUrl = null;
+            // Upload poster if provided
+            if (eventForm.poster) {
+                const file = eventForm.poster;
+                const ext = file.name.split('.').pop();
+                const path = `${myClub.id}/posters/${Date.now()}.${ext}`;
+                const { error: uploadErr } = await supabase.storage.from('club-assets').upload(path, file, { upsert: true });
+                if (uploadErr) throw uploadErr;
+                const { data: { publicUrl } } = supabase.storage.from('club-assets').getPublicUrl(path);
+                posterUrl = publicUrl;
+            }
+
+            const { poster, ...formData } = eventForm;
             const { error } = await supabase.from('events').insert({
-                ...eventForm,
+                ...formData,
                 club_id: myClub.id,
                 status: 'pending',
                 max_participants: parseInt(eventForm.max_participants),
                 date: new Date(eventForm.date).toISOString(),
-                registration_deadline: eventForm.registration_deadline ? new Date(eventForm.registration_deadline).toISOString() : null
+                registration_deadline: eventForm.registration_deadline ? new Date(eventForm.registration_deadline).toISOString() : null,
+                poster_url: posterUrl
             });
             if (error) throw error;
             setShowEventModal(false);
-            setEventForm({ title: '', description: '', date: '', venue: '', category: '', max_participants: 100, registration_type: 'individual', registration_deadline: '' });
+            setEventForm({ title: '', description: '', date: '', venue: '', category: '', max_participants: 100, registration_type: 'individual', registration_deadline: '', poster: null });
             fetchData();
             alert('Event created! It will be visible once an admin approves it.');
         } catch (err) {
             alert('Error creating event: ' + err.message);
         }
         setActionLoading(prev => ({ ...prev, createEvent: false }));
+    };
+
+    const handleMarkEventCompleted = async (eventId, eventTitle) => {
+        if (!confirm(`Are you sure you want to mark "${eventTitle}" as completed? This cannot be undone.`)) return;
+        setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: true }));
+        try {
+            const { error } = await supabase.from('events').update({ status: 'completed' }).eq('id', eventId);
+            if (error) throw error;
+            alert('Event marked as completed!');
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: false }));
     };
 
     const handleUpdateClub = async (e) => {
@@ -283,8 +313,13 @@ export default function ClubLeaderDashboard() {
 
     return (
         <div className="dashboard-layout">
+            {/* Mobile hamburger */}
+            <button className="hamburger-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                {sidebarOpen ? '✕' : '☰'}
+            </button>
+            <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
             {/* Sidebar */}
-            <aside className="sidebar">
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <img src="/nit-logo-white.png" alt="NIT KKR" />
                     <div>
@@ -598,6 +633,18 @@ export default function ClubLeaderDashboard() {
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end', flexShrink: 0 }}>
                                                 <span className={`badge ${event.status === 'active' ? 'badge-success' : event.status === 'pending' ? 'badge-warning' : event.status === 'completed' ? 'badge-primary' : 'badge-danger'}`}>{event.status}</span>
                                                 {event.status === 'active' && (
+                                                    <>
+                                                        <button onClick={() => handleMarkEventCompleted(event.id, event.title)} className="btn btn-primary btn-sm"
+                                                            disabled={actionLoading[`complete_${event.id}`]}>
+                                                            {actionLoading[`complete_${event.id}`] ? '...' : '✅ Mark Completed'}
+                                                        </button>
+                                                        <button onClick={() => handleGenerateCertificates(event.id)} className="btn btn-secondary btn-sm"
+                                                            disabled={actionLoading[`cert_${event.id}`]}>
+                                                            {actionLoading[`cert_${event.id}`] ? '...' : '📜 Generate Certs'}
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {event.status === 'completed' && (
                                                     <button onClick={() => handleGenerateCertificates(event.id)} className="btn btn-secondary btn-sm"
                                                         disabled={actionLoading[`cert_${event.id}`]}>
                                                         {actionLoading[`cert_${event.id}`] ? '...' : '📜 Generate Certs'}
@@ -668,6 +715,14 @@ export default function ClubLeaderDashboard() {
                                                 <label>Registration Deadline</label>
                                                 <input type="datetime-local" className="form-input" value={eventForm.registration_deadline} onChange={e => setEventForm({ ...eventForm, registration_deadline: e.target.value })} />
                                             </div>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Event Poster (optional)</label>
+                                            <input type="file" accept="image/*" className="form-input" style={{ padding: '8px' }}
+                                                onChange={e => setEventForm({ ...eventForm, poster: e.target.files[0] })} />
+                                            {eventForm.poster && (
+                                                <p style={{ fontSize: '0.8rem', color: 'var(--success-400)', marginTop: '4px' }}>📎 {eventForm.poster.name}</p>
+                                            )}
                                         </div>
                                         <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                                             <button type="submit" className="btn btn-primary" disabled={actionLoading.createEvent}>

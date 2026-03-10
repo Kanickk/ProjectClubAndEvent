@@ -19,6 +19,7 @@ export default function RegisterPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleChange = (e) => {
         setForm({ ...form, [e.target.name]: e.target.value });
@@ -215,29 +216,41 @@ export default function RegisterPage() {
 
                             <div className="form-group">
                                 <label>Password</label>
-                                <input
-                                    type="password"
-                                    name="password"
-                                    className="form-input"
-                                    placeholder="Minimum 6 characters"
-                                    value={form.password}
-                                    onChange={handleChange}
-                                    required
-                                    minLength={6}
-                                />
+                                <div className="password-field-wrapper">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        name="password"
+                                        className="form-input"
+                                        placeholder="Minimum 6 characters"
+                                        value={form.password}
+                                        onChange={handleChange}
+                                        required
+                                        minLength={6}
+                                        style={{ paddingRight: '40px' }}
+                                    />
+                                    <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)}>
+                                        {showPassword ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="form-group">
                                 <label>Confirm Password</label>
-                                <input
-                                    type="password"
-                                    name="confirmPassword"
-                                    className="form-input"
-                                    placeholder="Re-enter your password"
-                                    value={form.confirmPassword}
-                                    onChange={handleChange}
-                                    required
-                                />
+                                <div className="password-field-wrapper">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        name="confirmPassword"
+                                        className="form-input"
+                                        placeholder="Re-enter your password"
+                                        value={form.confirmPassword}
+                                        onChange={handleChange}
+                                        required
+                                        style={{ paddingRight: '40px' }}
+                                    />
+                                    <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)}>
+                                        {showPassword ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
                             </div>
 
                             <button

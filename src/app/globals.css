@@ -970,7 +970,71 @@ textarea.form-input {
   color: white;
 }
 
+.hamburger-btn {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 200;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--dark-800);
+  border: 1px solid var(--dark-600);
+  color: white;
+  font-size: 1.4rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-md);
+}
+
+.hamburger-btn:hover {
+  background: var(--primary-600);
+  border-color: var(--primary-500);
+}
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 90;
+  animation: fadeIn 0.2s ease;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--dark-400);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 4px;
+  transition: color var(--transition-fast);
+}
+
+.password-toggle-btn:hover {
+  color: var(--dark-200);
+}
+
+.password-field-wrapper {
+  position: relative;
+}
+
 @media (max-width: 768px) {
+  .hamburger-btn {
+    display: flex;
+  }
+
+  .sidebar-overlay.open {
+    display: block;
+  }
+
   .sidebar {
     transform: translateX(-100%);
   }
@@ -981,7 +1045,16 @@ textarea.form-input {
 
   .dashboard-main {
     margin-left: 0;
-    padding: 20px;
+    padding: 16px;
+    padding-top: 72px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 1.2rem;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
   }
 }
 

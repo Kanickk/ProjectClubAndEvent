@@ -14,6 +14,7 @@ export default function AdminDashboard() {
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState({});
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Data states
     const [stats, setStats] = useState({ users: 0, clubs: 0, events: 0, students: 0 });
@@ -26,6 +27,8 @@ export default function AdminDashboard() {
     const [broadcastNotifs, setBroadcastNotifs] = useState([]);
     const [showNotifForm, setShowNotifForm] = useState(false);
     const [notifForm, setNotifForm] = useState({ title: '', message: '' });
+    const [userSearch, setUserSearch] = useState('');
+    const [eventSearch, setEventSearch] = useState('');
 
     const fetchData = useCallback(async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -77,6 +80,7 @@ export default function AdminDashboard() {
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const handleAction = async (action, id, type) => {
+        if (!confirm(`Are you sure you want to ${action} this ${type === 'event' ? 'event' : 'user'}?`)) return;
         setActionLoading(prev => ({ ...prev, [id]: true }));
         try {
             if (action === 'approve' && type === 'club_leader') {
@@ -95,6 +99,45 @@ export default function AdminDashboard() {
             console.error(err);
         }
         setActionLoading(prev => ({ ...prev, [id]: false }));
+    };
+
+    const handleMarkEventCompleted = async (eventId, eventTitle) => {
+        if (!confirm(`Mark "${eventTitle}" as completed?`)) return;
+        setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: true }));
+        try {
+            await supabase.from('events').update({ status: 'completed' }).eq('id', eventId);
+            alert('Event marked as completed!');
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: false }));
+    };
+
+    const handleDeactivateUser = async (userId, userName) => {
+        if (!confirm(`Deactivate user "${userName}"? They will not be able to login.`)) return;
+        setActionLoading(prev => ({ ...prev, [`deact_${userId}`]: true }));
+        try {
+            await supabase.from('profiles').update({ status: 'rejected' }).eq('id', userId);
+            alert(`User ${userName} has been deactivated.`);
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`deact_${userId}`]: false }));
+    };
+
+    const handleActivateUser = async (userId, userName) => {
+        if (!confirm(`Re-activate user "${userName}"?`)) return;
+        setActionLoading(prev => ({ ...prev, [`act_${userId}`]: true }));
+        try {
+            await supabase.from('profiles').update({ status: 'active' }).eq('id', userId);
+            alert(`User ${userName} has been activated.`);
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`act_${userId}`]: false }));
     };
 
     const handleCreateNotification = async (e) => {
@@ -138,8 +181,13 @@ export default function AdminDashboard() {
 
     return (
         <div className="dashboard-layout">
+            {/* Mobile hamburger */}
+            <button className="hamburger-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                {sidebarOpen ? '✕' : '☰'}
+            </button>
+            <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
             {/* Sidebar */}
-            <aside className="sidebar">
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <img src="/nit-logo-white.png" alt="NIT KKR" />
                     <div>
@@ -474,6 +522,11 @@ export default function AdminDashboard() {
                                 <h2>📋 All Events</h2>
                                 <span className="section-count">{allEvents.length}</span>
                             </div>
+                            <div style={{ marginBottom: '16px' }}>
+                                <input type="text" className="form-input" placeholder="Search events..."
+                                    value={eventSearch} onChange={e => setEventSearch(e.target.value)}
+                                    style={{ maxWidth: '300px' }} />
+                            </div>
                             <div className="table-container">
                                 <table className="data-table">
                                     <thead>
@@ -483,22 +536,45 @@ export default function AdminDashboard() {
                                             <th>Date</th>
                                             <th>Venue</th>
                                             <th>Status</th>
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {allEvents.map(event => (
-                                            <tr key={event.id}>
-                                                <td style={{ fontWeight: 600 }}>{event.title}</td>
-                                                <td style={{ color: 'var(--dark-400)' }}>{event.clubs?.name}</td>
-                                                <td style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>{new Date(event.date).toLocaleDateString()}</td>
-                                                <td style={{ color: 'var(--dark-400)' }}>{event.venue}</td>
-                                                <td>
-                                                    <span className={`badge ${event.status === 'active' ? 'badge-success' : event.status === 'pending' ? 'badge-warning' : event.status === 'completed' ? 'badge-primary' : 'badge-danger'}`}>
-                                                        {event.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {allEvents
+                                            .filter(e => !eventSearch || e.title.toLowerCase().includes(eventSearch.toLowerCase()) || e.clubs?.name?.toLowerCase().includes(eventSearch.toLowerCase()))
+                                            .map(event => (
+                                                <tr key={event.id}>
+                                                    <td style={{ fontWeight: 600 }}>{event.title}</td>
+                                                    <td style={{ color: 'var(--dark-400)' }}>{event.clubs?.name}</td>
+                                                    <td style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>{new Date(event.date).toLocaleDateString()}</td>
+                                                    <td style={{ color: 'var(--dark-400)' }}>{event.venue}</td>
+                                                    <td>
+                                                        <span className={`badge ${event.status === 'active' ? 'badge-success' : event.status === 'pending' ? 'badge-warning' : event.status === 'completed' ? 'badge-primary' : 'badge-danger'}`}>
+                                                            {event.status}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        {event.status === 'active' && (
+                                                            <button onClick={() => handleMarkEventCompleted(event.id, event.title)}
+                                                                className="btn btn-primary btn-sm"
+                                                                disabled={actionLoading[`complete_${event.id}`]}
+                                                            >
+                                                                {actionLoading[`complete_${event.id}`] ? '...' : '✅ Complete'}
+                                                            </button>
+                                                        )}
+                                                        {event.status === 'pending' && (
+                                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                                <button onClick={() => handleAction('approve', event.id, 'event')} className="btn btn-success btn-sm" disabled={actionLoading[event.id]}>
+                                                                    ✓
+                                                                </button>
+                                                                <button onClick={() => handleAction('reject', event.id, 'event')} className="btn btn-danger btn-sm" disabled={actionLoading[event.id]}>
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
                                     </tbody>
                                 </table>
                             </div>
@@ -514,6 +590,11 @@ export default function AdminDashboard() {
                                 <h2>All Users</h2>
                                 <span className="section-count">{allUsers.length}</span>
                             </div>
+                            <div style={{ marginBottom: '16px' }}>
+                                <input type="text" className="form-input" placeholder="Search users by name, email, or role..."
+                                    value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                                    style={{ maxWidth: '400px' }} />
+                            </div>
                             <div className="table-container">
                                 <table className="data-table">
                                     <thead>
@@ -524,30 +605,55 @@ export default function AdminDashboard() {
                                             <th>Status</th>
                                             <th>Roll Number</th>
                                             <th>Joined</th>
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {allUsers.map(user => (
-                                            <tr key={user.id}>
-                                                <td style={{ fontWeight: 600 }}>
-                                                    {user.full_name}
-                                                    {user.is_primary_admin && <span className="badge badge-primary" style={{ marginLeft: '6px' }}>Primary</span>}
-                                                </td>
-                                                <td style={{ color: 'var(--dark-400)' }}>{user.email}</td>
-                                                <td>
-                                                    <span className={`badge ${user.role === 'admin' ? 'badge-primary' : user.role === 'club_leader' ? 'badge-warning' : 'badge-success'}`}>
-                                                        {user.role === 'club_leader' ? 'Club Leader' : user.role}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span className={`badge ${user.status === 'active' ? 'badge-success' : user.status === 'pending' ? 'badge-warning' : 'badge-danger'}`}>
-                                                        {user.status}
-                                                    </span>
-                                                </td>
-                                                <td style={{ color: 'var(--dark-400)' }}>{user.roll_number || '—'}</td>
-                                                <td style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>{new Date(user.created_at).toLocaleDateString()}</td>
-                                            </tr>
-                                        ))}
+                                        {allUsers
+                                            .filter(u => !userSearch || u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase()) || u.role?.toLowerCase().includes(userSearch.toLowerCase()))
+                                            .map(user => (
+                                                <tr key={user.id}>
+                                                    <td style={{ fontWeight: 600 }}>
+                                                        {user.full_name}
+                                                        {user.is_primary_admin && <span className="badge badge-primary" style={{ marginLeft: '6px' }}>Primary</span>}
+                                                    </td>
+                                                    <td style={{ color: 'var(--dark-400)' }}>{user.email}</td>
+                                                    <td>
+                                                        <span className={`badge ${user.role === 'admin' ? 'badge-primary' : user.role === 'club_leader' ? 'badge-warning' : 'badge-success'}`}>
+                                                            {user.role === 'club_leader' ? 'Club Leader' : user.role}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span className={`badge ${user.status === 'active' ? 'badge-success' : user.status === 'pending' ? 'badge-warning' : 'badge-danger'}`}>
+                                                            {user.status}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ color: 'var(--dark-400)' }}>{user.roll_number || '—'}</td>
+                                                    <td style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>{new Date(user.created_at).toLocaleDateString()}</td>
+                                                    <td>
+                                                        {!user.is_primary_admin && user.id !== profile?.id && (
+                                                            <>
+                                                                {user.status === 'active' && (
+                                                                    <button onClick={() => handleDeactivateUser(user.id, user.full_name)}
+                                                                        className="btn btn-danger btn-sm"
+                                                                        disabled={actionLoading[`deact_${user.id}`]}
+                                                                    >
+                                                                        {actionLoading[`deact_${user.id}`] ? '...' : 'Deactivate'}
+                                                                    </button>
+                                                                )}
+                                                                {user.status === 'rejected' && (
+                                                                    <button onClick={() => handleActivateUser(user.id, user.full_name)}
+                                                                        className="btn btn-success btn-sm"
+                                                                        disabled={actionLoading[`act_${user.id}`]}
+                                                                    >
+                                                                        {actionLoading[`act_${user.id}`] ? '...' : 'Activate'}
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
                                     </tbody>
                                 </table>
                             </div>
