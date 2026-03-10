@@ -528,14 +528,21 @@ export default function StudentDashboard() {
                                                         {reg.events?.date ? new Date(reg.events.date).toLocaleDateString() : ''} · {reg.events?.venue}
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={() => handleUnregisterEvent(reg.id, reg.events?.title)}
-                                                    className="btn btn-danger btn-sm"
-                                                    disabled={actionLoading[`unreg_${reg.id}`]}
-                                                    style={{ flexShrink: 0 }}
-                                                >
-                                                    {actionLoading[`unreg_${reg.id}`] ? '...' : 'Unregister'}
-                                                </button>
+                                                {(() => {
+                                                    const eventDone = reg.events?.status === 'completed' || (reg.events?.registration_deadline && new Date(reg.events.registration_deadline) < new Date()) || (reg.events?.date && new Date(reg.events.date) < new Date());
+                                                    return eventDone ? (
+                                                        <span className="badge badge-primary" style={{ flexShrink: 0 }}>Completed</span>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleUnregisterEvent(reg.id, reg.events?.title)}
+                                                            className="btn btn-danger btn-sm"
+                                                            disabled={actionLoading[`unreg_${reg.id}`]}
+                                                            style={{ flexShrink: 0 }}
+                                                        >
+                                                            {actionLoading[`unreg_${reg.id}`] ? '...' : 'Unregister'}
+                                                        </button>
+                                                    );
+                                                })()}
                                             </div>
                                         ))}
                                     </div>
@@ -665,13 +672,15 @@ export default function StudentDashboard() {
                                                     <button className="btn btn-success btn-sm" disabled>
                                                         ✅ Registered
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleUnregisterEvent(myReg.id, event.title)}
-                                                        className="btn btn-danger btn-sm"
-                                                        disabled={actionLoading[`unreg_${myReg?.id}`]}
-                                                    >
-                                                        {actionLoading[`unreg_${myReg?.id}`] ? '...' : 'Unregister'}
-                                                    </button>
+                                                    {!deadlinePassed && event.status !== 'completed' && new Date(event.date) > new Date() && (
+                                                        <button
+                                                            onClick={() => handleUnregisterEvent(myReg.id, event.title)}
+                                                            className="btn btn-danger btn-sm"
+                                                            disabled={actionLoading[`unreg_${myReg?.id}`]}
+                                                        >
+                                                            {actionLoading[`unreg_${myReg?.id}`] ? '...' : 'Unregister'}
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => { setFeedbackForm({ eventId: event.id, rating: 0, comment: '' }); setShowFeedbackModal(true); }}
                                                         className="btn btn-secondary btn-sm"
