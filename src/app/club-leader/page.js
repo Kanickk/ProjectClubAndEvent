@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
+import ProfileModal from '@/components/ProfileModal';
 
 export default function ClubLeaderDashboard() {
     const router = useRouter();
@@ -29,6 +30,22 @@ export default function ClubLeaderDashboard() {
     const [notifForm, setNotifForm] = useState({ title: '', message: '' });
     const chatEndRef = useRef(null);
 
+    // Profile editing
+    const [profileForm, setProfileForm] = useState({ full_name: '', branch: '', year: '', bio: '' });
+    const [showProfileEdit, setShowProfileEdit] = useState(false);
+    const [profileModalUserId, setProfileModalUserId] = useState(null);
+
+    // Chat settings
+    const [showChatSettings, setShowChatSettings] = useState(false);
+    const [chatSettingsValue, setChatSettingsValue] = useState('all');
+
+    // Attendance
+    const [meetSessions, setMeetSessions] = useState([]);
+    const [selectedSession, setSelectedSession] = useState(null);
+    const [attendanceData, setAttendanceData] = useState({});
+    const [showNewSession, setShowNewSession] = useState(false);
+    const [newSessionForm, setNewSessionForm] = useState({ date: '', description: '' });
+
     // Forms
     const [showEventModal, setShowEventModal] = useState(false);
     const [showEditClub, setShowEditClub] = useState(false);
@@ -47,12 +64,14 @@ export default function ClubLeaderDashboard() {
             router.push('/login'); return;
         }
         setProfile(prof);
+        setProfileForm({ full_name: prof.full_name || '', branch: prof.branch || '', year: prof.year || '', bio: prof.bio || '' });
 
         // Get club
         const { data: club } = await supabase.from('clubs').select('*').eq('admin_id', user.id).single();
         if (club) {
             setMyClub(club);
             setClubForm({ name: club.name, description: club.description || '' });
+            setChatSettingsValue(club.chat_settings?.who_can_message || 'all');
 
             // Fetch related data in parallel
             const [
@@ -70,15 +89,26 @@ export default function ClubLeaderDashboard() {
                     (await supabase.from('events').select('id').eq('club_id', club.id)).data?.map(e => e.id) || []
                 ),
                 supabase.from('broadcast_notifications').select('*, profiles:creator_id(full_name)').eq('club_id', club.id).order('created_at', { ascending: false }).limit(30),
-                supabase.from('chat_messages').select('*, profiles:sender_id(full_name)').eq('club_id', club.id).order('created_at', { ascending: true }).limit(200)
+                supabase.from('chat_messages').select('*, profiles:sender_id(full_name, avatar_url)').eq('club_id', club.id).order('created_at', { ascending: true }).limit(200)
             ]);
 
             setMembers(mems || []);
             setEvents(evts || []);
             setNotifications(notifs || []);
             setFeedback(fb || []);
-            setBroadcastNotifs(bNotifs || []);
+            // Also fetch global admin broadcasts
+            const { data: globalNotifs } = await supabase.from('broadcast_notifications')
+                .select('*, profiles:creator_id(full_name), clubs:club_id(name)')
+                .is('club_id', null).order('created_at', { ascending: false }).limit(20);
+            const allBroadcasts = [...(bNotifs || []), ...(globalNotifs || [])]
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            setBroadcastNotifs(allBroadcasts);
             setChatMessages(msgs || []);
+
+            // Fetch meet sessions
+            const { data: sessions } = await supabase.from('meet_sessions')
+                .select('*').eq('club_id', club.id).order('date', { ascending: false });
+            setMeetSessions(sessions || []);
 
             // Fetch registrations for all events
             if (evts && evts.length > 0) {
@@ -262,6 +292,114 @@ export default function ClubLeaderDashboard() {
         router.push('/login');
     };
 
+    // Profile handlers
+    const handleUpdateProfile = async (e) => {
+        e.preventDefault();
+        setActionLoading(prev => ({ ...prev, updateProfile: true }));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            await supabase.from('profiles').update({
+                full_name: profileForm.full_name,
+                branch: profileForm.branch,
+                year: profileForm.year,
+                bio: profileForm.bio,
+            }).eq('id', user.id);
+            setShowProfileEdit(false);
+            fetchData();
+            alert('Profile updated!');
+        } catch (err) { alert('Error: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, updateProfile: false }));
+    };
+
+    const handleAvatarUpload = async (file) => {
+        if (!file) return;
+        setActionLoading(prev => ({ ...prev, avatarUpload: true }));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const ext = file.name.split('.').pop();
+            const path = `${user.id}/avatar.${ext}`;
+            await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+            await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+            fetchData();
+            alert('Profile picture updated!');
+        } catch (err) { alert('Error uploading avatar: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, avatarUpload: false }));
+    };
+
+    // Chat settings handler
+    const handleSaveChatSettings = async (value) => {
+        setChatSettingsValue(value);
+        try {
+            await supabase.from('clubs').update({ chat_settings: { who_can_message: value } }).eq('id', myClub.id);
+            alert('Chat settings updated!');
+        } catch (err) { alert('Error: ' + err.message); }
+    };
+
+    // Attendance handlers
+    const handleCreateSession = async (e) => {
+        e.preventDefault();
+        setActionLoading(prev => ({ ...prev, createSession: true }));
+        try {
+            const { error } = await supabase.from('meet_sessions').insert({
+                club_id: myClub.id,
+                date: newSessionForm.date,
+                description: newSessionForm.description
+            });
+            if (error) throw error;
+            setNewSessionForm({ date: '', description: '' });
+            setShowNewSession(false);
+            fetchData();
+            alert('Meet session created!');
+        } catch (err) { alert('Error: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, createSession: false }));
+    };
+
+    const loadAttendance = async (sessionId) => {
+        setSelectedSession(sessionId);
+        const { data } = await supabase.from('meet_attendance').select('*').eq('session_id', sessionId);
+        const map = {};
+        (data || []).forEach(a => { map[a.member_id] = a.status; });
+        setAttendanceData(map);
+    };
+
+    const handleMarkAttendance = async (memberId, status) => {
+        const newData = { ...attendanceData, [memberId]: status };
+        setAttendanceData(newData);
+        try {
+            await supabase.from('meet_attendance').upsert({
+                session_id: selectedSession,
+                member_id: memberId,
+                status: status
+            }, { onConflict: 'session_id,member_id' });
+        } catch (err) { console.error(err); }
+    };
+
+    const cycleAttendance = (memberId) => {
+        const current = attendanceData[memberId] || 'not_called';
+        const next = current === 'not_called' ? 'present' : current === 'present' ? 'absent' : 'not_called';
+        handleMarkAttendance(memberId, next);
+    };
+
+    const exportAttendanceCSV = () => {
+        const session = meetSessions.find(s => s.id === selectedSession);
+        if (!session) return;
+        const rows = [['Name', 'Roll Number', 'Email', 'Status']];
+        activeMembers.forEach(m => {
+            const status = attendanceData[m.profiles?.id || m.user_id] || 'not_called';
+            const statusLabel = status === 'present' ? 'Present' : status === 'absent' ? 'Absent' : 'Not Called';
+            rows.push([m.profiles?.full_name || '', m.profiles?.roll_number || '', m.profiles?.email || '', statusLabel]);
+        });
+        const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attendance_${session.date}_${session.description || 'session'}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     if (loading) {
         return <div className="loading-screen"><div className="spinner" /><p style={{ color: 'var(--dark-400)' }}>Loading Dashboard...</p></div>;
     }
@@ -302,10 +440,12 @@ export default function ClubLeaderDashboard() {
 
     const sidebarLinks = [
         { key: 'overview', icon: '📊', label: 'Overview' },
+        { key: 'profile', icon: '👤', label: 'My Profile' },
         { key: 'club', icon: '🏛️', label: 'Club Profile' },
         { key: 'members', icon: '👥', label: 'Members', count: pendingMembers.length },
         { key: 'events', icon: '🎯', label: 'Events' },
         { key: 'participants', icon: '📋', label: 'Participants' },
+        { key: 'attendance', icon: '✅', label: 'Attendance' },
         { key: 'chat', icon: '💬', label: 'Group Chat' },
         { key: 'analytics', icon: '📈', label: 'Analytics' },
         { key: 'notifications', icon: '🔔', label: 'Notifications', count: notifications.filter(n => !n.is_read).length },
@@ -354,10 +494,12 @@ export default function ClubLeaderDashboard() {
                 <div className="dashboard-header">
                     <h1>
                         {activeTab === 'overview' && 'Dashboard Overview'}
+                        {activeTab === 'profile' && 'My Profile'}
                         {activeTab === 'club' && 'Club Profile'}
                         {activeTab === 'members' && 'Member Management'}
                         {activeTab === 'events' && 'Event Management'}
                         {activeTab === 'participants' && 'Event Participants'}
+                        {activeTab === 'attendance' && 'Meet Attendance'}
                         {activeTab === 'chat' && 'Group Chat'}
                         {activeTab === 'analytics' && 'Club Analytics'}
                         {activeTab === 'notifications' && 'Notifications'}
@@ -450,6 +592,99 @@ export default function ClubLeaderDashboard() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* ===== MY PROFILE TAB ===== */}
+                {activeTab === 'profile' && (
+                    <div className="animate-fade-in">
+                        <div className="card" style={{ maxWidth: '600px' }}>
+                            {!showProfileEdit ? (
+                                <>
+                                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                                        <div className="profile-avatar-upload" style={{ pointerEvents: 'none' }}>
+                                            {profile?.avatar_url ? (
+                                                <img src={profile.avatar_url} alt={profile.full_name} />
+                                            ) : (
+                                                <div className="avatar-placeholder">{profile?.full_name?.charAt(0)}</div>
+                                            )}
+                                        </div>
+                                        <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{profile?.full_name}</h2>
+                                        <span className="badge badge-warning" style={{ marginTop: '8px' }}>Club Leader</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                                        {[
+                                            { icon: '📧', label: 'Email', value: profile?.email },
+                                            { icon: '🎓', label: 'Roll Number', value: profile?.roll_number },
+                                            { icon: '📚', label: 'Branch', value: profile?.branch || 'Not set' },
+                                            { icon: '📅', label: 'Year', value: profile?.year || 'Not set' },
+                                            { icon: '💬', label: 'Bio', value: profile?.bio || 'Not set' },
+                                        ].map((item, i) => (
+                                            <div key={i} className="profile-detail-row">
+                                                <span className="profile-detail-icon">{item.icon}</span>
+                                                <div>
+                                                    <div className="profile-detail-label">{item.label}</div>
+                                                    <div className="profile-detail-value">{item.value}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setShowProfileEdit(true)} className="btn btn-primary">Edit Profile</button>
+                                </>
+                            ) : (
+                                <form onSubmit={handleUpdateProfile}>
+                                    <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '20px' }}>Edit Profile</h2>
+                                    <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                                        <div className="profile-avatar-upload">
+                                            {profile?.avatar_url ? (
+                                                <img src={profile.avatar_url} alt="" />
+                                            ) : (
+                                                <div className="avatar-placeholder">{profile?.full_name?.charAt(0)}</div>
+                                            )}
+                                            <div className="avatar-overlay">📷</div>
+                                            <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handleAvatarUpload(e.target.files[0])} />
+                                        </div>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--dark-400)' }}>
+                                            {actionLoading.avatarUpload ? 'Uploading...' : 'Click avatar to change'}
+                                        </p>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Full Name</label>
+                                        <input type="text" className="form-input" value={profileForm.full_name} onChange={e => setProfileForm({ ...profileForm, full_name: e.target.value })} required />
+                                    </div>
+                                    <div className="grid-2">
+                                        <div className="form-group">
+                                            <label>Branch</label>
+                                            <select className="form-input" value={profileForm.branch} onChange={e => setProfileForm({ ...profileForm, branch: e.target.value })}>
+                                                <option value="">Select Branch</option>
+                                                {['Computer Engineering', 'Information Technology', 'Electrical Engineering', 'Electronics & Communication', 'Mechanical Engineering', 'Civil Engineering', 'Production & Industrial', 'Physics', 'Mathematics', 'Chemistry', 'Other'].map(b => (
+                                                    <option key={b} value={b}>{b}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Year</label>
+                                            <select className="form-input" value={profileForm.year} onChange={e => setProfileForm({ ...profileForm, year: e.target.value })}>
+                                                <option value="">Select Year</option>
+                                                {['1st Year', '2nd Year', '3rd Year', '4th Year', 'PhD', 'Alumni'].map(y => (
+                                                    <option key={y} value={y}>{y}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Bio</label>
+                                        <textarea className="form-input" value={profileForm.bio} onChange={e => setProfileForm({ ...profileForm, bio: e.target.value })} rows={3} placeholder="Tell us about yourself..." />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                        <button type="submit" className="btn btn-primary" disabled={actionLoading.updateProfile}>
+                                            {actionLoading.updateProfile ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                        <button type="button" onClick={() => setShowProfileEdit(false)} className="btn btn-secondary">Cancel</button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -903,14 +1138,148 @@ export default function ClubLeaderDashboard() {
                     </div>
                 )}
 
+                {/* ===== ATTENDANCE TAB ===== */}
+                {activeTab === 'attendance' && (
+                    <div className="animate-fade-in">
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                            <button onClick={() => setShowNewSession(!showNewSession)} className="btn btn-primary">
+                                {showNewSession ? 'Cancel' : '➕ New Meet Session'}
+                            </button>
+                            {selectedSession && (
+                                <button onClick={exportAttendanceCSV} className="btn btn-success">📥 Export CSV</button>
+                            )}
+                        </div>
+
+                        {showNewSession && (
+                            <div className="card" style={{ marginBottom: '24px' }}>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '16px' }}>Create Meet Session</h2>
+                                <form onSubmit={handleCreateSession}>
+                                    <div className="grid-2">
+                                        <div className="form-group">
+                                            <label>Date</label>
+                                            <input type="date" className="form-input" value={newSessionForm.date} onChange={e => setNewSessionForm({ ...newSessionForm, date: e.target.value })} required />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Description</label>
+                                            <input type="text" className="form-input" value={newSessionForm.description} onChange={e => setNewSessionForm({ ...newSessionForm, description: e.target.value })} placeholder="e.g. Weekly Standup" />
+                                        </div>
+                                    </div>
+                                    <button type="submit" className="btn btn-primary" disabled={actionLoading.createSession}>
+                                        {actionLoading.createSession ? 'Creating...' : 'Create Session'}
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* Session List */}
+                        <div className="card" style={{ marginBottom: '24px' }}>
+                            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px' }}>📅 Meet Sessions</h2>
+                            {meetSessions.length === 0 ? (
+                                <div className="empty-state" style={{ padding: '24px' }}>
+                                    <div className="empty-icon">📅</div>
+                                    <h3>No sessions yet</h3>
+                                    <p>Create your first meet session to start tracking attendance.</p>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {meetSessions.map(s => (
+                                        <div key={s.id} onClick={() => loadAttendance(s.id)} style={{
+                                            padding: '14px 16px', background: selectedSession === s.id ? 'rgba(99,102,241,0.1)' : 'var(--dark-700)',
+                                            borderRadius: 'var(--radius-md)', cursor: 'pointer', borderLeft: selectedSession === s.id ? '3px solid var(--primary-500)' : '3px solid transparent',
+                                            transition: 'all 0.2s ease'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div>
+                                                    <span style={{ fontWeight: 600 }}>{new Date(s.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                    {s.description && <span style={{ color: 'var(--dark-400)', marginLeft: '12px', fontSize: '0.85rem' }}>— {s.description}</span>}
+                                                </div>
+                                                <span className="badge badge-primary">{selectedSession === s.id ? 'Selected' : 'View'}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Attendance Grid */}
+                        {selectedSession && (
+                            <div className="card">
+                                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px' }}>
+                                    ✅ Mark Attendance — {meetSessions.find(s => s.id === selectedSession)?.description || meetSessions.find(s => s.id === selectedSession)?.date}
+                                </h2>
+                                <div className="attendance-summary" style={{ marginBottom: '16px' }}>
+                                    <span>✅ Present: {Object.values(attendanceData).filter(v => v === 'present').length}</span>
+                                    <span>❌ Absent: {Object.values(attendanceData).filter(v => v === 'absent').length}</span>
+                                    <span>➖ Not Called: {activeMembers.length - Object.values(attendanceData).filter(v => v === 'present' || v === 'absent').length}</span>
+                                </div>
+                                {activeMembers.length === 0 ? (
+                                    <p style={{ color: 'var(--dark-400)' }}>No active members in this club.</p>
+                                ) : (
+                                    <div className="attendance-grid">
+                                        <table className="attendance-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Name</th>
+                                                    <th>Roll No.</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {activeMembers.map((m, i) => {
+                                                    const memberId = m.profiles?.id || m.user_id;
+                                                    const status = attendanceData[memberId] || 'not_called';
+                                                    return (
+                                                        <tr key={m.id}>
+                                                            <td>{i + 1}</td>
+                                                            <td style={{ fontWeight: 500 }}>{m.profiles?.full_name || 'Unknown'}</td>
+                                                            <td>{m.profiles?.roll_number || '—'}</td>
+                                                            <td>
+                                                                <button className={`attendance-status-btn status-${status}`} onClick={() => cycleAttendance(memberId)} title="Click to cycle: Not Called → Present → Absent">
+                                                                    {status === 'present' ? '✓' : status === 'absent' ? '✗' : '−'}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* ===== GROUP CHAT TAB ===== */}
                 {activeTab === 'chat' && (
                     <div className="animate-fade-in">
+                        {/* Chat Settings Panel */}
+                        {showChatSettings && (
+                            <div className="chat-settings-panel">
+                                <h3>⚙️ Chat Settings</h3>
+                                {[
+                                    { value: 'all', title: 'Everyone', desc: 'All club members can send messages' },
+                                    { value: 'admins_only', title: 'Leaders Only', desc: 'Only club leaders/admins can send messages' },
+                                    { value: 'muted', title: 'Muted', desc: 'No one can send messages (read-only)' },
+                                ].map(opt => (
+                                    <div key={opt.value} className={`chat-setting-option ${chatSettingsValue === opt.value ? 'active' : ''}`}
+                                        onClick={() => handleSaveChatSettings(opt.value)}>
+                                        <input type="radio" checked={chatSettingsValue === opt.value} readOnly />
+                                        <label>
+                                            <div className="setting-title">{opt.title}</div>
+                                            <div className="setting-desc">{opt.desc}</div>
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="chat-container">
                             <div className="chat-header">
                                 <span style={{ fontSize: '1.3rem' }}>💬</span>
                                 <h3>{myClub?.name} — Group Chat</h3>
                                 <span className="badge badge-success" style={{ marginLeft: 'auto' }}>{activeMembers.length} members</span>
+                                <button onClick={() => setShowChatSettings(!showChatSettings)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.3rem', marginLeft: '8px' }} title="Chat Settings">⚙️</button>
                             </div>
                             <div className="chat-messages">
                                 {chatMessages.length === 0 ? (
@@ -921,19 +1290,34 @@ export default function ClubLeaderDashboard() {
                                     </div>
                                 ) : (
                                     chatMessages.map(msg => (
-                                        <div key={msg.id} className={`chat-bubble ${msg.sender_id === profile?.id ? 'chat-bubble-own' : ''}`}>
-                                            <div className="chat-sender">{msg.profiles?.full_name || 'Unknown'}</div>
-                                            <div>{msg.message}</div>
-                                            <div className="chat-time">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                        <div key={msg.id} className="chat-bubble-with-avatar" style={{ justifyContent: msg.sender_id === profile?.id ? 'flex-end' : 'flex-start' }}>
+                                            {msg.sender_id !== profile?.id && (
+                                                msg.profiles?.avatar_url ? (
+                                                    <img src={msg.profiles.avatar_url} className="chat-avatar-small" onClick={() => setProfileModalUserId(msg.sender_id)} alt="" />
+                                                ) : (
+                                                    <div className="chat-avatar-placeholder-small" onClick={() => setProfileModalUserId(msg.sender_id)}>
+                                                        {msg.profiles?.full_name?.charAt(0) || '?'}
+                                                    </div>
+                                                )
+                                            )}
+                                            <div className={`chat-bubble ${msg.sender_id === profile?.id ? 'chat-bubble-own' : ''}`}>
+                                                <div className="chat-sender">{msg.profiles?.full_name || 'Unknown'}</div>
+                                                <div>{msg.message}</div>
+                                                <div className="chat-time">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                            </div>
                                         </div>
                                     ))
                                 )}
                                 <div ref={chatEndRef} />
                             </div>
-                            <form className="chat-input-container" onSubmit={handleSendMessage}>
-                                <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." />
-                                <button type="submit" className="chat-send-btn" disabled={!chatInput.trim()}>➤</button>
-                            </form>
+                            {chatSettingsValue === 'muted' ? (
+                                <div className="chat-muted-notice">🔇 Chat is currently muted by the leader</div>
+                            ) : (
+                                <form className="chat-input-container" onSubmit={handleSendMessage}>
+                                    <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." />
+                                    <button type="submit" className="chat-send-btn" disabled={!chatInput.trim()}>➤</button>
+                                </form>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1034,6 +1418,7 @@ export default function ClubLeaderDashboard() {
                     </div>
                 )}
             </main>
+            {profileModalUserId && <ProfileModal userId={profileModalUserId} onClose={() => setProfileModalUserId(null)} />}
         </div>
     );
 }
