@@ -15,6 +15,8 @@ export default function RegisterPage() {
         confirmPassword: '',
         role: 'student',
         clubName: '',
+        branch: '',
+        year: '',
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -68,6 +70,8 @@ export default function RegisterPage() {
                 full_name: form.fullName,
                 role: form.role,
                 roll_number: rollMatch ? rollMatch[1] : null,
+                branch: form.branch || null,
+                year: form.year || null,
             };
 
             if (form.role === 'club_leader') {
@@ -213,6 +217,27 @@ export default function RegisterPage() {
                                     />
                                 </div>
                             )}
+
+                            <div className="grid-2">
+                                <div className="form-group">
+                                    <label>Branch</label>
+                                    <select name="branch" className="form-input" value={form.branch} onChange={handleChange}>
+                                        <option value="">Select Branch</option>
+                                        {['Computer Engineering', 'Information Technology', 'Electrical Engineering', 'Electronics & Communication', 'Mechanical Engineering', 'Civil Engineering', 'Production & Industrial', 'Physics', 'Mathematics', 'Chemistry', 'Other'].map(b => (
+                                            <option key={b} value={b}>{b}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label>Year</label>
+                                    <select name="year" className="form-input" value={form.year} onChange={handleChange}>
+                                        <option value="">Select Year</option>
+                                        {['1st Year', '2nd Year', '3rd Year', '4th Year', 'PhD', 'Alumni'].map(y => (
+                                            <option key={y} value={y}>{y}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
 
                             <div className="form-group">
                                 <label>Password</label>

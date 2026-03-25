@@ -30,6 +30,10 @@ export default function AdminDashboard() {
     const [userSearch, setUserSearch] = useState('');
     const [eventSearch, setEventSearch] = useState('');
 
+    // Profile editing
+    const [profileForm, setProfileForm] = useState({ full_name: '', branch: '', year: '', bio: '' });
+    const [showProfileEdit, setShowProfileEdit] = useState(false);
+
     const fetchData = useCallback(async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { router.push('/login'); return; }
@@ -39,6 +43,7 @@ export default function AdminDashboard() {
             router.push('/login'); return;
         }
         setProfile(prof);
+        setProfileForm({ full_name: prof.full_name || '', branch: prof.branch || '', year: prof.year || '', bio: prof.bio || '' });
 
         // Fetch all data in parallel
         const [
@@ -167,12 +172,46 @@ export default function AdminDashboard() {
         router.push('/login');
     };
 
+    // Profile handlers
+    const handleUpdateProfile = async (e) => {
+        e.preventDefault();
+        setActionLoading(prev => ({ ...prev, updateProfile: true }));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            await supabase.from('profiles').update({
+                full_name: profileForm.full_name, branch: profileForm.branch,
+                year: profileForm.year, bio: profileForm.bio,
+            }).eq('id', user.id);
+            setShowProfileEdit(false);
+            fetchData();
+            alert('Profile updated!');
+        } catch (err) { alert('Error: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, updateProfile: false }));
+    };
+
+    const handleAvatarUpload = async (file) => {
+        if (!file) return;
+        setActionLoading(prev => ({ ...prev, avatarUpload: true }));
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const ext = file.name.split('.').pop();
+            const path = `${user.id}/avatar.${ext}`;
+            await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+            await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+            fetchData();
+            alert('Profile picture updated!');
+        } catch (err) { alert('Error uploading avatar: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, avatarUpload: false }));
+    };
+
     if (loading) {
         return <div className="loading-screen"><div className="spinner" /><p style={{ color: 'var(--dark-400)' }}>Loading Dashboard...</p></div>;
     }
 
     const sidebarLinks = [
         { key: 'overview', icon: '📊', label: 'Overview' },
+        { key: 'profile', icon: '👤', label: 'My Profile' },
         { key: 'approvals', icon: '✅', label: 'Approvals', count: pendingLeaders.length + pendingAdmins.length },
         { key: 'events', icon: '🎯', label: 'Events', count: pendingEvents.length },
         { key: 'users', icon: '👥', label: 'All Users' },
@@ -231,6 +270,7 @@ export default function AdminDashboard() {
                 <div className="dashboard-header">
                     <h1>
                         {activeTab === 'overview' && 'Dashboard Overview'}
+                        {activeTab === 'profile' && 'My Profile'}
                         {activeTab === 'approvals' && 'Pending Approvals'}
                         {activeTab === 'events' && 'Event Management'}
                         {activeTab === 'users' && 'User Management'}
@@ -240,6 +280,99 @@ export default function AdminDashboard() {
                         <div className="user-avatar">{profile?.full_name?.charAt(0)}</div>
                     </div>
                 </div>
+
+                {/* ===== MY PROFILE TAB ===== */}
+                {activeTab === 'profile' && (
+                    <div className="animate-fade-in">
+                        <div className="card" style={{ maxWidth: '600px' }}>
+                            {!showProfileEdit ? (
+                                <>
+                                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                                        <div className="profile-avatar-upload" style={{ pointerEvents: 'none' }}>
+                                            {profile?.avatar_url ? (
+                                                <img src={profile.avatar_url} alt={profile.full_name} />
+                                            ) : (
+                                                <div className="avatar-placeholder">{profile?.full_name?.charAt(0)}</div>
+                                            )}
+                                        </div>
+                                        <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{profile?.full_name}</h2>
+                                        <span className="badge badge-primary" style={{ marginTop: '8px' }}>Admin</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                                        {[
+                                            { icon: '📧', label: 'Email', value: profile?.email },
+                                            { icon: '🎓', label: 'Roll Number', value: profile?.roll_number },
+                                            { icon: '📚', label: 'Branch', value: profile?.branch || 'Not set' },
+                                            { icon: '📅', label: 'Year', value: profile?.year || 'Not set' },
+                                            { icon: '💬', label: 'Bio', value: profile?.bio || 'Not set' },
+                                        ].map((item, i) => (
+                                            <div key={i} className="profile-detail-row">
+                                                <span className="profile-detail-icon">{item.icon}</span>
+                                                <div>
+                                                    <div className="profile-detail-label">{item.label}</div>
+                                                    <div className="profile-detail-value">{item.value}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setShowProfileEdit(true)} className="btn btn-primary">Edit Profile</button>
+                                </>
+                            ) : (
+                                <form onSubmit={handleUpdateProfile}>
+                                    <h2 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '20px' }}>Edit Profile</h2>
+                                    <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                                        <div className="profile-avatar-upload">
+                                            {profile?.avatar_url ? (
+                                                <img src={profile.avatar_url} alt="" />
+                                            ) : (
+                                                <div className="avatar-placeholder">{profile?.full_name?.charAt(0)}</div>
+                                            )}
+                                            <div className="avatar-overlay">📷</div>
+                                            <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handleAvatarUpload(e.target.files[0])} />
+                                        </div>
+                                        <p style={{ fontSize: '0.8rem', color: 'var(--dark-400)' }}>
+                                            {actionLoading.avatarUpload ? 'Uploading...' : 'Click avatar to change'}
+                                        </p>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Full Name</label>
+                                        <input type="text" className="form-input" value={profileForm.full_name} onChange={e => setProfileForm({ ...profileForm, full_name: e.target.value })} required />
+                                    </div>
+                                    <div className="grid-2">
+                                        <div className="form-group">
+                                            <label>Branch</label>
+                                            <select className="form-input" value={profileForm.branch} onChange={e => setProfileForm({ ...profileForm, branch: e.target.value })}>
+                                                <option value="">Select Branch</option>
+                                                {['Computer Engineering', 'Information Technology', 'Electrical Engineering', 'Electronics & Communication', 'Mechanical Engineering', 'Civil Engineering', 'Production & Industrial', 'Physics', 'Mathematics', 'Chemistry', 'Other'].map(b => (
+                                                    <option key={b} value={b}>{b}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Year</label>
+                                            <select className="form-input" value={profileForm.year} onChange={e => setProfileForm({ ...profileForm, year: e.target.value })}>
+                                                <option value="">Select Year</option>
+                                                {['1st Year', '2nd Year', '3rd Year', '4th Year', 'PhD', 'Alumni'].map(y => (
+                                                    <option key={y} value={y}>{y}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Bio</label>
+                                        <textarea className="form-input" value={profileForm.bio} onChange={e => setProfileForm({ ...profileForm, bio: e.target.value })} rows={3} placeholder="Tell us about yourself..." />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                        <button type="submit" className="btn btn-primary" disabled={actionLoading.updateProfile}>
+                                            {actionLoading.updateProfile ? 'Saving...' : 'Save Changes'}
+                                        </button>
+                                        <button type="button" onClick={() => setShowProfileEdit(false)} className="btn btn-secondary">Cancel</button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Overview Tab */}
                 {activeTab === 'overview' && (
