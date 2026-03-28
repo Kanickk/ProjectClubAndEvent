@@ -41,6 +41,12 @@ export default function StudentDashboard() {
     const [profileModalUserId, setProfileModalUserId] = useState(null);
     const [chatSettings, setChatSettings] = useState('all');
 
+    // QR & Team registration
+    const [showQrModal, setShowQrModal] = useState(null); // registration object
+    const [qrDataUrl, setQrDataUrl] = useState(null);
+    const [showTeamModal, setShowTeamModal] = useState(null); // event id
+    const [teamName, setTeamName] = useState('');
+
     const fetchData = useCallback(async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { router.push('/login'); return; }
@@ -63,8 +69,8 @@ export default function StudentDashboard() {
         ] = await Promise.all([
             supabase.from('clubs').select('*, profiles(full_name)'), // All clubs
             supabase.from('club_members').select('*, clubs(*)').eq('user_id', user.id), // My memberships
-            supabase.from('events').select('*, clubs(name)').eq('status', 'active').order('date', { ascending: true }), // Active events
-            supabase.from('registrations').select('*, events(*)').eq('user_id', user.id), // My registrations
+            supabase.from('events').select('*, clubs(name)').in('status', ['active', 'completed']).order('date', { ascending: true }), // Active + completed events
+            supabase.from('registrations').select('*, events(*), checkin_code').eq('user_id', user.id), // My registrations with checkin codes
             supabase.from('certificates').select('*, events(title, date)').eq('user_id', user.id), // My certificates
             supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20)
         ]);
@@ -200,7 +206,13 @@ export default function StudentDashboard() {
         setActionLoading(prev => ({ ...prev, avatarUpload: false }));
     };
 
-    const handleRegisterEvent = async (eventId, type = 'individual') => {
+    const handleRegisterEvent = async (eventId, type = 'individual', teamNameVal = null) => {
+        // If team type and no team name yet, show team modal
+        if (type === 'team' && !teamNameVal) {
+            setShowTeamModal(eventId);
+            setTeamName('');
+            return;
+        }
         setActionLoading(prev => ({ ...prev, [eventId]: true }));
         try {
             // Check if already registered
@@ -227,27 +239,31 @@ export default function StudentDashboard() {
                 return;
             }
 
-            // If team, ask for team name
-            let teamName = null;
-            if (type === 'team') {
-                teamName = prompt("Enter your Team Name:");
-                if (!teamName) return;
-            }
-
             await supabase.from('registrations').insert({
                 event_id: eventId,
                 user_id: user.id,
                 registration_type: type,
-                team_name: teamName
+                team_name: teamNameVal
             });
 
-            alert('Registration successful!');
+            alert('Registration successful! Check your QR code in the event card.');
             fetchData();
         } catch (err) {
             console.error(err);
             alert('Error registering for event');
         }
         setActionLoading(prev => ({ ...prev, [eventId]: false }));
+    };
+
+    const showEventQR = async (registration) => {
+        try {
+            const qrData = `EVENT_CHECKIN:${registration.checkin_code}`;
+            const dataUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
+            setQrDataUrl(dataUrl);
+            setShowQrModal(registration);
+        } catch (err) {
+            alert('Error generating QR code');
+        }
     };
 
     const handleUnregisterEvent = async (registrationId, eventTitle) => {
@@ -778,9 +794,10 @@ export default function StudentDashboard() {
                                 const isRegistered = myEvents.some(r => r.event_id === event.id);
                                 const myReg = myEvents.find(r => r.event_id === event.id);
                                 const deadlinePassed = event.registration_deadline && new Date(event.registration_deadline) < new Date();
+                                const isCompleted = event.status === 'completed';
 
                                 return (
-                                    <div key={event.id} className="card">
+                                    <div key={event.id} className="card" style={{ opacity: isCompleted && !isRegistered ? 0.7 : 1 }}>
                                         {event.poster_url && (
                                             <div style={{ marginBottom: '16px', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                                 <img src={event.poster_url} alt={event.title} style={{ width: '100%', maxHeight: '200px', objectFit: 'cover' }} />
@@ -788,7 +805,10 @@ export default function StudentDashboard() {
                                         )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                                             <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>{event.title}</h3>
-                                            <span className="badge badge-primary">{event.clubs?.name}</span>
+                                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                {isCompleted && <span className="badge badge-secondary">Completed</span>}
+                                                <span className="badge badge-primary">{event.clubs?.name}</span>
+                                            </div>
                                         </div>
 
                                         <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '0.9rem', color: 'var(--dark-300)', flexWrap: 'wrap' }}>
@@ -813,11 +833,17 @@ export default function StudentDashboard() {
 
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--dark-700)', paddingTop: '16px', gap: '8px', flexWrap: 'wrap' }}>
                                             {isRegistered ? (
-                                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                                     <button className="btn btn-success btn-sm" disabled>
-                                                        ✅ Registered
+                                                        ✅ Registered {myReg?.attended ? '(Attended)' : ''}
                                                     </button>
-                                                    {!deadlinePassed && event.status !== 'completed' && new Date(event.date) > new Date() && (
+                                                    <button
+                                                        onClick={() => showEventQR(myReg)}
+                                                        className="btn btn-primary btn-sm"
+                                                    >
+                                                        🎫 My QR
+                                                    </button>
+                                                    {!deadlinePassed && !isCompleted && new Date(event.date) > new Date() && (
                                                         <button
                                                             onClick={() => handleUnregisterEvent(myReg.id, event.title)}
                                                             className="btn btn-danger btn-sm"
@@ -837,9 +863,9 @@ export default function StudentDashboard() {
                                                 <button
                                                     onClick={() => handleRegisterEvent(event.id, event.registration_type)}
                                                     className="btn btn-primary btn-sm"
-                                                    disabled={actionLoading[event.id] || deadlinePassed}
+                                                    disabled={actionLoading[event.id] || deadlinePassed || isCompleted}
                                                 >
-                                                    {deadlinePassed ? 'Deadline Passed' : actionLoading[event.id] ? '...' : `Register (${event.registration_type})`}
+                                                    {isCompleted ? 'Event Ended' : deadlinePassed ? 'Deadline Passed' : actionLoading[event.id] ? '...' : `Register (${event.registration_type})`}
                                                 </button>
                                             )}
                                         </div>
@@ -848,6 +874,64 @@ export default function StudentDashboard() {
                             })}
                         </div>
                         {filteredEvents.length === 0 && <div className="empty-state">No events found matching your search.</div>}
+
+                        {/* QR Code Modal */}
+                        {showQrModal && qrDataUrl && (
+                            <div className="modal-overlay" onClick={() => setShowQrModal(null)}>
+                                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center' }}>
+                                    <div className="modal-header">
+                                        <h2>🎫 Event Check-in QR</h2>
+                                        <button className="modal-close" onClick={() => setShowQrModal(null)}>×</button>
+                                    </div>
+                                    <div style={{ padding: '24px', background: 'white', borderRadius: 'var(--radius-md)', margin: '0 auto 16px', display: 'inline-block' }}>
+                                        <img src={qrDataUrl} alt="Check-in QR Code" style={{ width: '250px', height: '250px' }} />
+                                    </div>
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '8px' }}>{showQrModal.events?.title}</h3>
+                                    <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginBottom: '16px' }}>
+                                        Show this QR code to the club leader at the event venue to mark your attendance.
+                                    </p>
+                                    {showQrModal.attended ? (
+                                        <div style={{ padding: '12px', background: 'rgba(16, 185, 129, 0.15)', borderRadius: 'var(--radius-md)', color: 'var(--success-400)', fontWeight: 600 }}>
+                                            ✅ You have already checked in for this event!
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '12px', background: 'rgba(245, 158, 11, 0.15)', borderRadius: 'var(--radius-md)', color: 'var(--warning-400)', fontWeight: 500, fontSize: '0.85rem' }}>
+                                            ⏳ Not yet checked in. Show this QR at the event.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Team Registration Modal */}
+                        {showTeamModal && (
+                            <div className="modal-overlay" onClick={() => setShowTeamModal(null)}>
+                                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                                    <div className="modal-header">
+                                        <h2>👥 Team Registration</h2>
+                                        <button className="modal-close" onClick={() => setShowTeamModal(null)}>×</button>
+                                    </div>
+                                    <form onSubmit={(e) => { e.preventDefault(); if (teamName.trim()) { setShowTeamModal(null); handleRegisterEvent(showTeamModal, 'team', teamName.trim()); } }}>
+                                        <div className="form-group">
+                                            <label>Team Name</label>
+                                            <input 
+                                                type="text" 
+                                                className="form-input" 
+                                                value={teamName} 
+                                                onChange={e => setTeamName(e.target.value)} 
+                                                placeholder="Enter your team name..." 
+                                                required 
+                                                autoFocus 
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                                            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Register Team</button>
+                                            <button type="button" onClick={() => setShowTeamModal(null)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Feedback Modal */}
                         {showFeedbackModal && (
