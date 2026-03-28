@@ -800,8 +800,8 @@ export default function StudentDashboard() {
                                 return (
                                     <div key={event.id} className="card" style={{ opacity: isCompleted && !isRegistered ? 0.7 : 1 }}>
                                         {event.poster_url && (
-                                            <div style={{ marginBottom: '16px', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                                                <img src={event.poster_url} alt={event.title} style={{ width: '100%', maxHeight: '200px', objectFit: 'cover' }} />
+                                            <div style={{ marginBottom: '16px', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--dark-700)' }}>
+                                                <img src={event.poster_url} alt={event.title} style={{ width: '100%', maxHeight: '300px', objectFit: 'contain', display: 'block' }} />
                                             </div>
                                         )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
