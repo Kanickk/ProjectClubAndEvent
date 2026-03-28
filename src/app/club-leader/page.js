@@ -400,6 +400,50 @@ export default function ClubLeaderDashboard() {
         URL.revokeObjectURL(url);
     };
 
+    const exportAllAttendanceCSV = async () => {
+        if (meetSessions.length === 0) return;
+        setActionLoading(prev => ({ ...prev, exportAll: true }));
+        try {
+            const activeMems = members.filter(m => m.status === 'active');
+            // Build header: Name, Roll Number, Email, then each session date
+            const headerRow = ['Name', 'Roll Number', 'Email'];
+            meetSessions.forEach(s => {
+                headerRow.push(new Date(s.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + (s.description ? ` (${s.description})` : ''));
+            });
+            const rows = [headerRow];
+
+            // Fetch all attendance records for all sessions at once
+            const sessionIds = meetSessions.map(s => s.id);
+            const { data: allAttendance } = await supabase.from('meet_attendance').select('*').in('session_id', sessionIds);
+            const attendanceMap = {};
+            (allAttendance || []).forEach(a => {
+                if (!attendanceMap[a.session_id]) attendanceMap[a.session_id] = {};
+                attendanceMap[a.session_id][a.member_id] = a.status;
+            });
+
+            // Build rows for each member
+            activeMems.forEach(m => {
+                const memberId = m.profiles?.id || m.user_id;
+                const row = [m.profiles?.full_name || '', m.profiles?.roll_number || '', m.profiles?.email || ''];
+                meetSessions.forEach(s => {
+                    const status = attendanceMap[s.id]?.[memberId] || 'not_called';
+                    row.push(status === 'present' ? 'Present' : status === 'absent' ? 'Absent' : 'Not Called');
+                });
+                rows.push(row);
+            });
+
+            const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${myClub?.name || 'club'}_all_attendance.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) { alert('Error exporting: ' + err.message); }
+        setActionLoading(prev => ({ ...prev, exportAll: false }));
+    };
+
     if (loading) {
         return <div className="loading-screen"><div className="spinner" /><p style={{ color: 'var(--dark-400)' }}>Loading Dashboard...</p></div>;
     }
@@ -505,7 +549,11 @@ export default function ClubLeaderDashboard() {
                         {activeTab === 'notifications' && 'Notifications'}
                     </h1>
                     <div className="user-info">
-                        <div className="user-avatar" style={{ background: 'var(--accent-500)' }}>{profile?.full_name?.charAt(0)}</div>
+                        <div className="user-avatar" style={{ background: 'var(--accent-500)', cursor: 'pointer', overflow: 'hidden', padding: 0 }} onClick={() => setActiveTab('profile')} title="My Profile">
+                            {profile?.avatar_url ? (
+                                <img src={profile.avatar_url} alt={profile.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                            ) : profile?.full_name?.charAt(0)}
+                        </div>
                     </div>
                 </div>
 
@@ -1141,12 +1189,17 @@ export default function ClubLeaderDashboard() {
                 {/* ===== ATTENDANCE TAB ===== */}
                 {activeTab === 'attendance' && (
                     <div className="animate-fade-in">
-                        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
                             <button onClick={() => setShowNewSession(!showNewSession)} className="btn btn-primary">
                                 {showNewSession ? 'Cancel' : '➕ New Meet Session'}
                             </button>
                             {selectedSession && (
-                                <button onClick={exportAttendanceCSV} className="btn btn-success">📥 Export CSV</button>
+                                <button onClick={exportAttendanceCSV} className="btn btn-success">📥 Export This Session</button>
+                            )}
+                            {meetSessions.length > 0 && (
+                                <button onClick={exportAllAttendanceCSV} className="btn btn-success" disabled={actionLoading.exportAll}>
+                                    {actionLoading.exportAll ? '⏳ Exporting...' : '📊 Export All Sessions'}
+                                </button>
                             )}
                         </div>
 
@@ -1257,7 +1310,10 @@ export default function ClubLeaderDashboard() {
                         {/* Chat Settings Panel */}
                         {showChatSettings && (
                             <div className="chat-settings-panel">
-                                <h3>⚙️ Chat Settings</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                    <h3 style={{ margin: 0 }}>⚙️ Chat Settings</h3>
+                                    <button onClick={() => setShowChatSettings(false)} style={{ background: 'none', border: 'none', color: 'var(--dark-400)', fontSize: '1.4rem', cursor: 'pointer', padding: '4px 8px', lineHeight: 1, borderRadius: 'var(--radius-sm)', transition: 'all 0.15s' }} onMouseEnter={e => e.target.style.color = 'white'} onMouseLeave={e => e.target.style.color = 'var(--dark-400)'} title="Close settings">×</button>
+                                </div>
                                 {[
                                     { value: 'all', title: 'Everyone', desc: 'All club members can send messages' },
                                     { value: 'admins_only', title: 'Leaders Only', desc: 'Only club leaders/admins can send messages' },
