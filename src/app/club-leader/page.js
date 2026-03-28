@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 import ProfileModal from '@/components/ProfileModal';
+import QRCode from 'qrcode';
 
 export default function ClubLeaderDashboard() {
     const router = useRouter();
@@ -45,6 +46,12 @@ export default function ClubLeaderDashboard() {
     const [attendanceData, setAttendanceData] = useState({});
     const [showNewSession, setShowNewSession] = useState(false);
     const [newSessionForm, setNewSessionForm] = useState({ date: '', description: '' });
+
+    // QR Scanner
+    const [scanningEventId, setScanningEventId] = useState(null);
+    const [showManualAttendance, setShowManualAttendance] = useState(null);
+    const [scanResult, setScanResult] = useState(null);
+    const scannerRef = useRef(null);
 
     // Forms
     const [showEventModal, setShowEventModal] = useState(false);
@@ -193,7 +200,9 @@ export default function ClubLeaderDashboard() {
     };
 
     const handleMarkEventCompleted = async (eventId, eventTitle) => {
-        if (!confirm(`Are you sure you want to mark "${eventTitle}" as completed? This cannot be undone.`)) return;
+        const eventRegs = registrations.filter(r => r.event_id === eventId);
+        const attendedCount = eventRegs.filter(r => r.attended).length;
+        if (!confirm(`Mark "${eventTitle}" as completed?\n\n${attendedCount} of ${eventRegs.length} registered students have checked in. Certificates will only be generated for checked-in students.`)) return;
         setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: true }));
         try {
             const { error } = await supabase.from('events').update({ status: 'completed' }).eq('id', eventId);
@@ -204,6 +213,86 @@ export default function ClubLeaderDashboard() {
             alert('Error: ' + err.message);
         }
         setActionLoading(prev => ({ ...prev, [`complete_${eventId}`]: false }));
+    };
+
+    // QR Scanner handlers
+    const startScanner = async (eventId) => {
+        setScanningEventId(eventId);
+        setScanResult(null);
+        // Dynamic import to avoid SSR issues
+        setTimeout(async () => {
+            try {
+                const { Html5Qrcode } = await import('html5-qrcode');
+                const scanner = new Html5Qrcode('qr-reader');
+                scannerRef.current = scanner;
+                await scanner.start(
+                    { facingMode: 'environment' },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    async (decodedText) => {
+                        // Expected format: EVENT_CHECKIN:{checkin_code}
+                        if (decodedText.startsWith('EVENT_CHECKIN:')) {
+                            const code = decodedText.replace('EVENT_CHECKIN:', '');
+                            try {
+                                await scanner.stop();
+                            } catch (e) { /* ignore */ }
+                            // Look up registration
+                            const { data: reg, error } = await supabase
+                                .from('registrations')
+                                .select('*, profiles:user_id(full_name)')
+                                .eq('checkin_code', code)
+                                .eq('event_id', eventId)
+                                .single();
+                            if (error || !reg) {
+                                setScanResult({ success: false, message: 'Invalid QR code or not registered for this event.' });
+                            } else if (reg.attended) {
+                                setScanResult({ success: false, message: `${reg.profiles?.full_name} has already checked in.` });
+                            } else {
+                                await supabase.from('registrations').update({ attended: true }).eq('id', reg.id);
+                                setScanResult({ success: true, message: `✅ ${reg.profiles?.full_name} checked in successfully!` });
+                                fetchData();
+                            }
+                        } else {
+                            setScanResult({ success: false, message: 'Not a valid event QR code.' });
+                        }
+                    },
+                    () => {}
+                );
+            } catch (err) {
+                console.error('Scanner error:', err);
+                setScanResult({ success: false, message: 'Camera not available. Use manual attendance.' });
+            }
+        }, 300);
+    };
+
+    const stopScanner = async () => {
+        try {
+            if (scannerRef.current) {
+                await scannerRef.current.stop();
+                scannerRef.current = null;
+            }
+        } catch (e) { /* ignore */ }
+        setScanningEventId(null);
+        setScanResult(null);
+    };
+
+    const handleManualCheckin = async (registrationId, studentName) => {
+        try {
+            await supabase.from('registrations').update({ attended: true }).eq('id', registrationId);
+            alert(`${studentName} checked in!`);
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    };
+
+    const handleUndoCheckin = async (registrationId, studentName) => {
+        try {
+            await supabase.from('registrations').update({ attended: false }).eq('id', registrationId);
+            alert(`${studentName} check-in undone.`);
+            fetchData();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
     };
 
     const handleUpdateClub = async (e) => {
@@ -898,36 +987,43 @@ export default function ClubLeaderDashboard() {
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                {events.map(event => (
+                                {events.map(event => {
+                                    const eventRegs = registrations.filter(r => r.event_id === event.id);
+                                    const attendedCount = eventRegs.filter(r => r.attended).length;
+                                    return (
                                     <div key={event.id} className="card">
+                                        {event.poster_url && (
+                                            <div style={{ marginBottom: '16px', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                                <img src={event.poster_url} alt={event.title} style={{ width: '100%', maxHeight: '200px', objectFit: 'cover' }} />
+                                            </div>
+                                        )}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                                            <div>
+                                            <div style={{ flex: 1 }}>
                                                 <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '4px' }}>{event.title}</h3>
                                                 <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginBottom: '8px' }}>
                                                     📅 {new Date(event.date).toLocaleString()} · 📍 {event.venue} · 🏷️ {event.category}
                                                 </p>
                                                 <p style={{ color: 'var(--dark-500)', fontSize: '0.85rem' }}>{event.description?.slice(0, 150)}...</p>
-                                                <div style={{ display: 'flex', gap: '12px', marginTop: '12px', fontSize: '0.8rem', color: 'var(--dark-400)' }}>
-                                                    <span>Max: {event.max_participants}</span>
-                                                    <span>Type: {event.registration_type}</span>
-                                                    <span>Registered: {registrations.filter(r => r.event_id === event.id).length}</span>
+                                                <div style={{ display: 'flex', gap: '12px', marginTop: '12px', fontSize: '0.8rem', color: 'var(--dark-400)', flexWrap: 'wrap' }}>
+                                                    <span>👥 Max: {event.max_participants || '∞'}</span>
+                                                    <span>📝 Type: {event.registration_type}</span>
+                                                    <span>📋 Registered: {eventRegs.length}</span>
+                                                    <span style={{ color: attendedCount > 0 ? 'var(--success-400)' : 'var(--dark-500)' }}>✅ Checked in: {attendedCount}/{eventRegs.length}</span>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end', flexShrink: 0 }}>
                                                 <span className={`badge ${event.status === 'active' ? 'badge-success' : event.status === 'pending' ? 'badge-warning' : event.status === 'completed' ? 'badge-primary' : 'badge-danger'}`}>{event.status}</span>
                                                 {event.status === 'active' && (
                                                     <>
-                                                        <button onClick={() => handleMarkEventCompleted(event.id, event.title)} className="btn btn-primary btn-sm"
+                                                        <button onClick={() => startScanner(event.id)} className="btn btn-primary btn-sm">📷 Scan Attendance</button>
+                                                        <button onClick={() => setShowManualAttendance(event.id)} className="btn btn-secondary btn-sm">📋 Manual Attendance</button>
+                                                        <button onClick={() => handleMarkEventCompleted(event.id, event.title)} className="btn btn-warning btn-sm"
                                                             disabled={actionLoading[`complete_${event.id}`]}>
-                                                            {actionLoading[`complete_${event.id}`] ? '...' : '✅ Mark Completed'}
-                                                        </button>
-                                                        <button onClick={() => handleGenerateCertificates(event.id)} className="btn btn-secondary btn-sm"
-                                                            disabled={actionLoading[`cert_${event.id}`]}>
-                                                            {actionLoading[`cert_${event.id}`] ? '...' : '📜 Generate Certs'}
+                                                            {actionLoading[`complete_${event.id}`] ? '...' : '🏁 Mark Completed'}
                                                         </button>
                                                     </>
                                                 )}
-                                                {event.status === 'completed' && (
+                                                {(event.status === 'active' || event.status === 'completed') && (
                                                     <button onClick={() => handleGenerateCertificates(event.id)} className="btn btn-secondary btn-sm"
                                                         disabled={actionLoading[`cert_${event.id}`]}>
                                                         {actionLoading[`cert_${event.id}`] ? '...' : '📜 Generate Certs'}
@@ -936,7 +1032,8 @@ export default function ClubLeaderDashboard() {
                                             </div>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -1014,6 +1111,78 @@ export default function ClubLeaderDashboard() {
                                             <button type="button" onClick={() => setShowEventModal(false)} className="btn btn-secondary">Cancel</button>
                                         </div>
                                     </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* QR Scanner Modal */}
+                        {scanningEventId && (
+                            <div className="modal-overlay" onClick={stopScanner}>
+                                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                                    <div className="modal-header">
+                                        <h2>📷 Scan Attendance QR</h2>
+                                        <button className="modal-close" onClick={stopScanner}>×</button>
+                                    </div>
+                                    <div id="qr-reader" style={{ width: '100%', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}></div>
+                                    {scanResult && (
+                                        <div style={{
+                                            marginTop: '16px', padding: '16px', borderRadius: 'var(--radius-md)',
+                                            background: scanResult.success ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                            border: `1px solid ${scanResult.success ? 'var(--success-400)' : 'var(--error-400)'}`,
+                                            color: scanResult.success ? 'var(--success-400)' : 'var(--error-400)',
+                                            fontSize: '1rem', fontWeight: 600, textAlign: 'center'
+                                        }}>
+                                            {scanResult.message}
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                                        <button onClick={() => { stopScanner(); startScanner(scanningEventId); }} className="btn btn-primary" style={{ flex: 1 }}>🔄 Scan Another</button>
+                                        <button onClick={() => { stopScanner(); setShowManualAttendance(scanningEventId); }} className="btn btn-secondary" style={{ flex: 1 }}>📋 Manual Instead</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Manual Attendance Modal */}
+                        {showManualAttendance && (
+                            <div className="modal-overlay" onClick={() => setShowManualAttendance(null)}>
+                                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', overflow: 'auto' }}>
+                                    <div className="modal-header">
+                                        <h2>📋 Manual Attendance</h2>
+                                        <button className="modal-close" onClick={() => setShowManualAttendance(null)}>×</button>
+                                    </div>
+                                    <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginBottom: '16px' }}>
+                                        Mark students who attended the event. Only checked-in students will receive certificates.
+                                    </p>
+                                    {registrations.filter(r => r.event_id === showManualAttendance).length === 0 ? (
+                                        <div className="empty-state"><p>No registrations for this event yet.</p></div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {registrations.filter(r => r.event_id === showManualAttendance).map(reg => (
+                                                <div key={reg.id} style={{
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                    padding: '12px 16px', background: reg.attended ? 'rgba(16, 185, 129, 0.1)' : 'var(--dark-700)',
+                                                    borderRadius: 'var(--radius-md)', border: reg.attended ? '1px solid var(--success-400)' : '1px solid var(--dark-600)'
+                                                }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{reg.profiles?.full_name || 'Unknown'}</div>
+                                                        <div style={{ fontSize: '0.8rem', color: 'var(--dark-400)' }}>
+                                                            {reg.profiles?.roll_number} · {reg.profiles?.email}
+                                                        </div>
+                                                    </div>
+                                                    {reg.attended ? (
+                                                        <button onClick={() => handleUndoCheckin(reg.id, reg.profiles?.full_name)} className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
+                                                            ✅ Checked In — Undo
+                                                        </button>
+                                                    ) : (
+                                                        <button onClick={() => handleManualCheckin(reg.id, reg.profiles?.full_name)} className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}>
+                                                            Mark Present
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
