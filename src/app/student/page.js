@@ -504,7 +504,11 @@ export default function StudentDashboard() {
                         {activeTab === 'notifications' && 'Notifications'}
                     </h1>
                     <div className="user-info">
-                        <div className="user-avatar" style={{ background: 'var(--success-500)' }}>{profile?.full_name?.charAt(0)}</div>
+                        <div className="user-avatar" style={{ background: 'var(--success-500)', cursor: 'pointer', overflow: 'hidden', padding: 0 }} onClick={() => setActiveTab('profile')} title="My Profile">
+                            {profile?.avatar_url ? (
+                                <img src={profile.avatar_url} alt={profile.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                            ) : profile?.full_name?.charAt(0)}
+                        </div>
                     </div>
                 </div>
 
