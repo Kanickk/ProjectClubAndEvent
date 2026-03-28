@@ -1136,8 +1136,8 @@ export default function ClubLeaderDashboard() {
                                         </div>
                                     )}
                                     <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                                        <button onClick={() => { stopScanner(); startScanner(scanningEventId); }} className="btn btn-primary" style={{ flex: 1 }}>🔄 Scan Another</button>
-                                        <button onClick={() => { stopScanner(); setShowManualAttendance(scanningEventId); }} className="btn btn-secondary" style={{ flex: 1 }}>📋 Manual Instead</button>
+                                        <button onClick={() => { const eid = scanningEventId; stopScanner(); startScanner(eid); }} className="btn btn-primary" style={{ flex: 1 }}>🔄 Scan Another</button>
+                                        <button onClick={() => { const eid = scanningEventId; stopScanner(); setShowManualAttendance(eid); }} className="btn btn-secondary" style={{ flex: 1 }}>📋 Manual Instead</button>
                                     </div>
                                 </div>
                             </div>
