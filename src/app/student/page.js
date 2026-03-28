@@ -251,8 +251,9 @@ export default function StudentDashboard() {
         } catch (err) {
             console.error(err);
             alert('Error registering for event');
+        } finally {
+            setActionLoading(prev => ({ ...prev, [eventId]: false }));
         }
-        setActionLoading(prev => ({ ...prev, [eventId]: false }));
     };
 
     const showEventQR = async (registration) => {
