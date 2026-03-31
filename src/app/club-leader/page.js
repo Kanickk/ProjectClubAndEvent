@@ -548,7 +548,7 @@ export default function ClubLeaderDashboard() {
             <div className="dashboard-layout">
                 <aside className="sidebar">
                     <div className="sidebar-header">
-                        <img src="/nit-logo-white.png" alt="NIT KKR" />
+                        <img src="/nit-logo-white.png" alt="Clubshetra" />
                         <div><h2>Club Leader</h2></div>
                     </div>
                     <div className="sidebar-footer">
@@ -594,7 +594,7 @@ export default function ClubLeaderDashboard() {
             {/* Sidebar */}
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
-                    <img src="/nit-logo-white.png" alt="NIT KKR" />
+                    <img src="/nit-logo-white.png" alt="Clubshetra" />
                     <div>
                         <h2>Club Leader</h2>
                         <span>{myClub?.name || 'My Club'}</span>

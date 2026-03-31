@@ -59,7 +59,7 @@ export default function AboutPage() {
                             color: 'var(--dark-300)', maxWidth: '700px', margin: '0 auto 48px',
                             fontSize: '1.05rem', lineHeight: 1.8
                         }}>
-                            We are a group of passionate Computer Science students from NIT Kurukshetra,
+                            We are a group of passionate Computer Science students from NIT Kurukshetra, the builders behind Clubshetra —
                             united by our love for building impactful software. This Club & Event Management
                             System is our vision for a smarter, more connected campus experience — built by
                             students, for students. Through collaboration, late nights of coding, and a shared

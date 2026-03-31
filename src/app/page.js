@@ -112,7 +112,7 @@ export default function HomePage() {
                 {/* Content */}
                 <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '0 24px', maxWidth: '800px' }}
                     className="animate-fade-in">
-                    <img src="/nit-logo-white.png" alt="NIT Kurukshetra" style={{
+                    <img src="/nit-logo-white.png" alt="Clubshetra" style={{
                         width: '100px',
                         height: '100px',
                         margin: '0 auto 24px',
@@ -132,7 +132,7 @@ export default function HomePage() {
                         letterSpacing: '0.05em',
                         marginBottom: '20px'
                     }}>
-                        NATIONAL INSTITUTE OF TECHNOLOGY, KURUKSHETRA
+                        CLUBSHETRA — CLUB & EVENT MANAGEMENT
                     </div>
 
                     {/* Typing Animation */}
@@ -265,7 +265,7 @@ export default function HomePage() {
                         Ready to Get Started?
                     </h2>
                     <p style={{ color: 'var(--dark-400)', marginBottom: '32px' }}>
-                        Join the community. Register with your NIT KKR email.
+                        Join the Clubshetra community. Register now and get started.
                     </p>
                     <Link href="/register" className="btn btn-primary btn-lg">
                         Create Your Account →

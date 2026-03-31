@@ -42,8 +42,8 @@ export default function Navbar({ user, profile }) {
                 fontWeight: 700,
                 fontSize: '0.95rem'
             }}>
-                <img src="/nit-logo-white.png" alt="NIT KKR" style={{ width: '32px', height: '32px' }} />
-                <span>NIT KKR</span>
+                <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '32px', height: '32px' }} />
+                <span>Clubshetra</span>
             </Link>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

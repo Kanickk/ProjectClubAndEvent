@@ -69,8 +69,8 @@ function VerifyForm() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>
                 <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'white', fontWeight: 700 }}>
-                    <img src="/nit-logo-white.png" alt="NIT KKR" style={{ width: '32px', height: '32px' }} />
-                    <span>NIT KKR</span>
+                    <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '32px', height: '32px' }} />
+                    <span>Clubshetra</span>
                 </Link>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <Link href="/about" style={{ color: 'var(--dark-300)', fontSize: '0.9rem', fontWeight: 500 }}>About</Link>
