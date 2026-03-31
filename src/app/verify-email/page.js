@@ -86,7 +86,7 @@ function VerifyEmailContent() {
         <div style={{ textAlign: 'center' }}>
             {/* Logo */}
             <div style={{ marginBottom: '28px' }}>
-                <img src="/nit-logo-white.png" alt="NIT KKR" style={{ width: '60px', height: '60px', margin: '0 auto 16px' }} />
+                <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '60px', height: '60px', margin: '0 auto 16px' }} />
                 <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>Verify Email</h1>
                 <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginTop: '4px' }}>
                     Enter the code sent to {email || 'your email'}

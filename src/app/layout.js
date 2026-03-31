@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-    title: 'Club & Event Management | NIT Kurukshetra',
-    description: 'Official Club & Event Management System for National Institute of Technology, Kurukshetra. Manage clubs, events, memberships, and certificates.',
+    title: 'Clubshetra | Club & Event Management',
+    description: 'Clubshetra — Your one-stop Club & Event Management System. Manage clubs, events, memberships, and certificates.',
 };
 
 export default function RootLayout({ children }) {

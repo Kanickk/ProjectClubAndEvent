@@ -12,7 +12,7 @@ export default function Footer() {
         }}>
             <div className="container" style={{ textAlign: 'center' }}>
                 <div style={{ marginBottom: '16px' }}>
-                    <img src="/nit-logo-white.png" alt="NIT KKR" style={{ width: '40px', height: '40px', opacity: 0.6 }} />
+                    <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '40px', height: '40px', opacity: 0.6 }} />
                 </div>
                 <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>
                     © 2026. Built with ❤️ by{' '}

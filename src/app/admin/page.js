@@ -228,10 +228,10 @@ export default function AdminDashboard() {
             {/* Sidebar */}
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
-                    <img src="/nit-logo-white.png" alt="NIT KKR" />
+                    <img src="/nit-logo-white.png" alt="Clubshetra" />
                     <div>
                         <h2>Admin Panel</h2>
-                        <span>NIT Kurukshetra</span>
+                        <span>Clubshetra</span>
                     </div>
                 </div>
 

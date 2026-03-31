@@ -152,10 +152,10 @@ export default function RegisterPage() {
 
                     <div className="glass-card" style={{ padding: '40px 32px' }}>
                         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-                            <img src="/nit-logo-white.png" alt="NIT KKR" style={{ width: '60px', height: '60px', margin: '0 auto 16px' }} />
+                            <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '60px', height: '60px', margin: '0 auto 16px' }} />
                             <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>Create Account</h1>
                             <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem', marginTop: '4px' }}>
-                                Register with your NIT Kurukshetra email
+                                Create your Clubshetra account
                             </p>
                         </div>
 
