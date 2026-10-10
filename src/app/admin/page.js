@@ -258,7 +258,6 @@ export default function AdminDashboard() {
                         {profile?.full_name}
                         {profile?.is_primary_admin && <span className="badge badge-primary" style={{ marginLeft: '8px' }}>Primary</span>}
                     </div>
-                    <Link href="/about" style={{ fontSize: '0.8rem', color: 'var(--dark-500)', display: 'block', marginBottom: '8px' }}>About Us</Link>
                     <button onClick={handleLogout} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
                         Logout
                     </button>

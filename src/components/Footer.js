@@ -15,10 +15,7 @@ export default function Footer() {
                     <img src="/nit-logo-white.png" alt="Clubshetra" style={{ width: '40px', height: '40px', opacity: 0.6 }} />
                 </div>
                 <p style={{ color: 'var(--dark-400)', fontSize: '0.85rem' }}>
-                    © 2026. Built with ❤️ by{' '}
-                    <Link href="/about" style={{ color: 'var(--primary-400)', fontWeight: 600 }}>
-                        Team Ethers
-                    </Link>
+                    © 2026 Clubshetra. All rights reserved.
                 </p>
                 <div style={{
                     display: 'flex',
@@ -27,7 +24,6 @@ export default function Footer() {
                     marginTop: '12px',
                     fontSize: '0.8rem'
                 }}>
-                    <Link href="/about" style={{ color: 'var(--dark-500)' }}>About Us</Link>
                     <Link href="/verify" style={{ color: 'var(--dark-500)' }}>Verify Certificate</Link>
                     <Link href="/login" style={{ color: 'var(--dark-500)' }}>Login</Link>
                     <Link href="/register" style={{ color: 'var(--dark-500)' }}>Register</Link>

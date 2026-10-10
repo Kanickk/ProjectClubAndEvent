@@ -47,14 +47,6 @@ export default function Navbar({ user, profile }) {
             </Link>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <Link href="/about" style={{
-                    color: pathname === '/about' ? 'var(--primary-400)' : 'var(--dark-300)',
-                    fontSize: '0.9rem',
-                    fontWeight: 500
-                }}>
-                    About
-                </Link>
-
                 {user ? (
                     <Link href={getDashboardLink()} className="btn btn-primary btn-sm">
                         Dashboard

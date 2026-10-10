@@ -73,7 +73,6 @@ function VerifyForm() {
                     <span>Clubshetra</span>
                 </Link>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <Link href="/about" style={{ color: 'var(--dark-300)', fontSize: '0.9rem', fontWeight: 500 }}>About</Link>
                     <Link href="/login" className="btn btn-secondary btn-sm">Login</Link>
                 </div>
             </nav>

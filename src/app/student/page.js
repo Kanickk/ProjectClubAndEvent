@@ -501,7 +501,6 @@ export default function StudentDashboard() {
                     <div style={{ fontSize: '0.75rem', color: 'var(--dark-400)', marginBottom: '12px' }}>
                         {profile?.roll_number}
                     </div>
-                    <Link href="/about" style={{ fontSize: '0.8rem', color: 'var(--dark-500)', display: 'block', marginBottom: '8px' }}>About Us</Link>
                     <button onClick={handleLogout} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
                         Logout
                     </button>

@@ -617,7 +617,6 @@ export default function ClubLeaderDashboard() {
 
                 <div className="sidebar-footer">
                     <div style={{ fontSize: '0.85rem', color: 'var(--dark-300)', marginBottom: '8px', fontWeight: 600 }}>{profile?.full_name}</div>
-                    <Link href="/about" style={{ fontSize: '0.8rem', color: 'var(--dark-500)', display: 'block', marginBottom: '8px' }}>About Us</Link>
                     <button onClick={handleLogout} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>Logout</button>
                 </div>
             </aside>
