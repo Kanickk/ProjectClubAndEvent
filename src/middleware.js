@@ -30,7 +30,7 @@ export async function middleware(request) {
 
     // Public routes - no auth required
     const publicRoutes = ['/', '/login', '/register', '/about', '/verify', '/pending', '/forgot-password', '/reset-password', '/verify-email'];
-    if (publicRoutes.some(r => pathname === r || pathname.startsWith('/verify'))) {
+    if (publicRoutes.some(r => pathname === r || pathname.startsWith('/verify') || pathname.startsWith('/auth'))) {
         return supabaseResponse;
     }
 
