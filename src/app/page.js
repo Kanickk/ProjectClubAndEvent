@@ -16,6 +16,8 @@ const HERO_LINES = [
 
 const TYPING_SPEED = 70;
 const DELETING_SPEED = 40;
+const PAUSE_AFTER_TYPING = 1800;
+const PAUSE_AFTER_DELETING = 400;
 const FEATURES = [
     {
         title: 'Club Management',
