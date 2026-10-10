@@ -16,8 +16,104 @@ const HERO_LINES = [
 
 const TYPING_SPEED = 70;
 const DELETING_SPEED = 40;
-const PAUSE_AFTER_TYPING = 1800;
-const PAUSE_AFTER_DELETING = 400;
+const FEATURES = [
+    {
+        title: 'Club Management',
+        desc: 'Join clubs, manage memberships, and connect with like-minded peers.',
+        color: '#818cf8',
+        bg: 'rgba(99, 102, 241, 0.1)',
+        border: 'rgba(99, 102, 241, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="21" x2="21" y2="21" />
+                <line x1="4" y1="10" x2="20" y2="10" />
+                <polyline points="12 3 20 8 4 8 12 3" />
+                <line x1="6" y1="10" x2="6" y2="21" />
+                <line x1="10" y1="10" x2="10" y2="21" />
+                <line x1="14" y1="10" x2="14" y2="21" />
+                <line x1="18" y1="10" x2="18" y2="21" />
+            </svg>
+        ),
+    },
+    {
+        title: 'Event Platform',
+        desc: 'Create, discover, and register for campus events with ease.',
+        color: '#a78bfa',
+        bg: 'rgba(139, 92, 246, 0.1)',
+        border: 'rgba(139, 92, 246, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+                <path d="M8 14h.01" />
+                <path d="M12 14h.01" />
+                <path d="M16 14h.01" />
+                <path d="M8 18h.01" />
+                <path d="M12 18h.01" />
+            </svg>
+        ),
+    },
+    {
+        title: 'Certificates',
+        desc: 'Earn verifiable certificates with QR codes for every participation.',
+        color: '#fbbf24',
+        bg: 'rgba(245, 158, 11, 0.1)',
+        border: 'rgba(245, 158, 11, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="6" />
+                <path d="m15.4 12.5 1.6 8.5-5-3-5 3 1.6-8.5" />
+                <polyline points="9 8 11 10 15 6" />
+            </svg>
+        ),
+    },
+    {
+        title: 'Team Registration',
+        desc: 'Register as individuals or form teams for competitive events.',
+        color: '#34d399',
+        bg: 'rgba(16, 185, 129, 0.1)',
+        border: 'rgba(16, 185, 129, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+        ),
+    },
+    {
+        title: 'Analytics',
+        desc: 'Track participation, engagement, and club growth with real-time data.',
+        color: '#38bdf8',
+        bg: 'rgba(14, 165, 233, 0.1)',
+        border: 'rgba(14, 165, 233, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+                <line x1="2" y1="20" x2="22" y2="20" />
+            </svg>
+        ),
+    },
+    {
+        title: 'Notifications',
+        desc: 'Stay updated with real-time notifications for approvals and events.',
+        color: '#fb7185',
+        bg: 'rgba(244, 63, 94, 0.1)',
+        border: 'rgba(244, 63, 94, 0.25)',
+        icon: (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                <circle cx="18" cy="4" r="2.5" fill="currentColor" stroke="none" />
+            </svg>
+        ),
+    },
+];
 
 export default function HomePage() {
     const [user, setUser] = useState(null);
@@ -233,20 +329,22 @@ export default function HomePage() {
                     </div>
 
                     <div className="grid-3">
-                        {[
-                            { icon: '🏛️', title: 'Club Management', desc: 'Join clubs, manage memberships, and connect with like-minded peers.' },
-                            { icon: '🎯', title: 'Event Platform', desc: 'Create, discover, and register for campus events with ease.' },
-                            { icon: '📜', title: 'Certificates', desc: 'Earn verifiable certificates with QR codes for every participation.' },
-                            { icon: '👥', title: 'Team Registration', desc: 'Register as individuals or form teams for competitive events.' },
-                            { icon: '📊', title: 'Analytics', desc: 'Track participation, engagement, and club growth with real-time data.' },
-                            { icon: '🔔', title: 'Notifications', desc: 'Stay updated with real-time notifications for approvals and events.' },
-                        ].map((feature, i) => (
-                            <div key={i} className="glass-card" style={{ textAlign: 'center', padding: '32px 24px' }}>
-                                <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>{feature.icon}</div>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'white', marginBottom: '8px' }}>
+                        {FEATURES.map((feature, i) => (
+                            <div key={i} className="feature-box">
+                                <div
+                                    className="feature-icon-container"
+                                    style={{
+                                        color: feature.color,
+                                        background: feature.bg,
+                                        border: `1px solid ${feature.border}`,
+                                    }}
+                                >
+                                    {feature.icon}
+                                </div>
+                                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'white', marginBottom: '10px', letterSpacing: '-0.01em' }}>
                                     {feature.title}
                                 </h3>
-                                <p style={{ fontSize: '0.9rem', color: 'var(--dark-400)', lineHeight: 1.6 }}>
+                                <p style={{ fontSize: '0.875rem', color: 'var(--dark-400)', lineHeight: 1.65 }}>
                                     {feature.desc}
                                 </p>
                             </div>

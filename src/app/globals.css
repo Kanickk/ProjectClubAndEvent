@@ -205,6 +205,40 @@ a:hover {
   box-shadow: var(--shadow-glow);
 }
 
+.feature-box {
+  background: rgba(13, 17, 28, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 36px 28px;
+  text-align: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+.feature-box:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.6), 0 0 16px rgba(99, 102, 241, 0.15);
+}
+
+.feature-icon-container {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  transition: transform 0.25s ease;
+}
+
+.feature-box:hover .feature-icon-container {
+  transform: scale(1.08);
+}
+
 .card {
   background: var(--dark-800);
   border: 1px solid var(--dark-600);
